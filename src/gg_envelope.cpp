@@ -475,10 +475,6 @@ std::vector<Point2D> extractAlphaShape(const std::vector<Point2D>& points,
 
 }  // namespace
 
-GgEnvelope::GgEnvelope(double alpha) {
-    setAlpha(alpha);
-}
-
 void GgEnvelope::addPoint(const Point2D& point) {
     points_.push_back(point);
 }
@@ -489,14 +485,6 @@ void GgEnvelope::addPoint(double gx, double gy) {
 
 void GgEnvelope::clear() {
     points_.clear();
-}
-
-void GgEnvelope::setAlpha(double alpha) {
-    if (!std::isfinite(alpha) || alpha < 0.0) {
-        alpha_ = 0.0;
-    } else {
-        alpha_ = alpha;
-    }
 }
 
 std::vector<Point2D> GgEnvelope::calculateEnvelope() const {

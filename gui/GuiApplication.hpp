@@ -41,6 +41,8 @@ private:
     bool useDataset_{false};
     std::string datasetPath_;
     std::string datasetStatus_;
+    std::string resultsDir_;
+    std::string resultsStatus_;
     float datasetPlayback_{1.0f};
     std::string analyticsStatus_;
     bool showMonteCarloSamples_{false};

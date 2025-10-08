@@ -1,0 +1,36 @@
+# Placeholder OpenVINS configuration tailored for the ESP32-CAM + LSM9DS1 rig.
+# Populate the fields below once calibration results are available.
+
+# IMU noise parameters (continuous-time, SI units)
+imu:
+  accel_noise_density: 0.0025    # m/s^1.5
+  accel_random_walk: 0.0001      # m/s^2/s^0.5
+  gyro_noise_density: 0.0005     # rad/s^0.5
+  gyro_random_walk: 0.00001      # rad/s^1.5
+  gravity: [0.0, 0.0, -9.80665]
+
+# Camera intrinsics for ESP32-CAM module (replace with calibration results)
+camera:
+  resolution: [640, 480]
+  camera_model: pinhole
+  fx: 420.0
+  fy: 420.0
+  cx: 320.0
+  cy: 240.0
+  distortion: [0.05, -0.12, 0.0, 0.0]
+
+# Camera-IMU extrinsics (rotation matrix R_ci and translation t_ci in meters)
+extrinsics:
+  rotation:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  translation: [0.05, 0.0, 0.08]
+
+# Sliding-window / solver parameters
+vio:
+  max_cameras: 8
+  window_size: 10
+  ransac_iterations: 50
+  min_parallax_deg: 0.5
+  huber_threshold: 1.0

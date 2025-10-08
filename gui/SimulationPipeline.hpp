@@ -5,6 +5,7 @@
 #include "gg_processor.hpp"
 #include "quasi_steady_state_filter.hpp"
 
+#include <array>
 #include <optional>
 #include <random>
 #include <string>
@@ -81,6 +82,39 @@ public:
     bool runMonteCarlo();
     const std::vector<Point2D>& monteCarloEnvelope() const { return monteCarloEnvelope_; }
     const std::vector<Point2D>& monteCarloSamples() const { return monteCarloSamples_; }
+
+    struct LoadedMetrics {
+        bool hasData{false};
+        std::size_t steadyCount{0};
+        double maxGx{0.0};
+        double maxGy{0.0};
+        double envelopeArea{0.0};
+        double alpha{0.0};
+        double rSquared{0.0};
+        double frictionMu{0.0};
+        double frictionViolation{0.0};
+        double frictionMax{0.0};
+        std::optional<double> hausdorff;
+        bool monteCarloEnabled{false};
+        std::size_t monteCarloSamples{0};
+        double mcMeanGx{0.0};
+        double mcMeanGy{0.0};
+        double mcMeanArea{0.0};
+        std::array<double, 2> mcGxCI{0.0, 0.0};
+        std::array<double, 2> mcGyCI{0.0, 0.0};
+        std::array<double, 2> mcAreaCI{0.0, 0.0};
+    };
+
+    struct TrajectorySample {
+        double timestamp{0.0};
+        Vec3 position;
+        Vec3 velocity;
+    };
+
+    bool loadProcessedResults(const std::string& directory);
+    bool hasLoadedMetrics() const { return loadedMetrics_.hasData; }
+    const LoadedMetrics& loadedMetrics() const { return loadedMetrics_; }
+    const std::vector<TrajectorySample>& loadedTrajectory() const { return loadedTrajectory_; }
 
     SimulationStats stats() const;
 
@@ -161,6 +195,9 @@ private:
 
     std::vector<ImuData> rawHistory_;
     AnalyticsResults analytics_;
+
+    LoadedMetrics loadedMetrics_;
+    std::vector<TrajectorySample> loadedTrajectory_;
 };
 
 }  // namespace gg::gui

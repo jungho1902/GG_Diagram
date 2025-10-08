@@ -5,16 +5,309 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace gg::gui {
 
 namespace {
 constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+
+std::string trim(const std::string& text) {
+    std::size_t start = 0;
+    while (start < text.size() && std::isspace(static_cast<unsigned char>(text[start]))) {
+        ++start;
+    }
+    std::size_t end = text.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+        --end;
+    }
+    return text.substr(start, end - start);
 }
+
+std::vector<std::string> splitCsv(const std::string& line) {
+    std::vector<std::string> tokens;
+    std::string token;
+    std::stringstream ss(line);
+    while (std::getline(ss, token, ',')) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+double extractNumber(const std::string& source, const std::string& key, double defaultValue) {
+    const std::string token = '"' + key + '"';
+    std::size_t pos = source.find(token);
+    if (pos == std::string::npos) {
+        return defaultValue;
+    }
+    pos = source.find(':', pos);
+    if (pos == std::string::npos) {
+        return defaultValue;
+    }
+    pos = source.find_first_of("-0123456789", pos + 1);
+    if (pos == std::string::npos) {
+        return defaultValue;
+    }
+    std::size_t end = pos;
+    while (end < source.size()) {
+        char ch = source[end];
+        if (!(std::isdigit(static_cast<unsigned char>(ch)) || ch == '-' || ch == '+' || ch == '.' || ch == 'e' || ch == 'E')) {
+            break;
+        }
+        ++end;
+    }
+    try {
+        return std::stod(source.substr(pos, end - pos));
+    } catch (...) {
+        return defaultValue;
+    }
+}
+
+bool extractBool(const std::string& source, const std::string& key, bool defaultValue) {
+    const std::string token = '"' + key + '"';
+    std::size_t pos = source.find(token);
+    if (pos == std::string::npos) {
+        return defaultValue;
+    }
+    pos = source.find(':', pos);
+    if (pos == std::string::npos) {
+        return defaultValue;
+    }
+    pos = source.find_first_not_of(" \t\n\r", pos + 1);
+    if (pos == std::string::npos) {
+        return defaultValue;
+    }
+    if (source.compare(pos, 4, "true") == 0) {
+        return true;
+    }
+    if (source.compare(pos, 5, "false") == 0) {
+        return false;
+    }
+    return defaultValue;
+}
+
+std::size_t extractSize(const std::string& source, const std::string& key, std::size_t defaultValue) {
+    double value = extractNumber(source, key, static_cast<double>(defaultValue));
+    if (value < 0.0) {
+        return defaultValue;
+    }
+    return static_cast<std::size_t>(value + 0.5);
+}
+
+std::string extractObject(const std::string& source, const std::string& key) {
+    const std::string token = '"' + key + '"';
+    std::size_t pos = source.find(token);
+    if (pos == std::string::npos) {
+        return {};
+    }
+    pos = source.find('{', pos);
+    if (pos == std::string::npos) {
+        return {};
+    }
+    int depth = 0;
+    std::size_t start = pos;
+    for (std::size_t i = pos; i < source.size(); ++i) {
+        char ch = source[i];
+        if (ch == '{') {
+            ++depth;
+        } else if (ch == '}') {
+            --depth;
+            if (depth == 0) {
+                return source.substr(start, i - start + 1);
+            }
+        }
+    }
+    return {};
+}
+
+std::string extractArray(const std::string& source, const std::string& key) {
+    const std::string token = '"' + key + '"';
+    std::size_t pos = source.find(token);
+    if (pos == std::string::npos) {
+        return {};
+    }
+    pos = source.find('[', pos);
+    if (pos == std::string::npos) {
+        return {};
+    }
+    int depth = 0;
+    std::size_t start = pos;
+    for (std::size_t i = pos; i < source.size(); ++i) {
+        char ch = source[i];
+        if (ch == '[') {
+            ++depth;
+        } else if (ch == ']') {
+            --depth;
+            if (depth == 0) {
+                return source.substr(start, i - start + 1);
+            }
+        }
+    }
+    return {};
+}
+
+std::vector<double> parseDoubleArray(const std::string& arrayText) {
+    std::vector<double> values;
+    if (arrayText.empty()) {
+        return values;
+    }
+    std::size_t start = arrayText.find('[');
+    std::size_t end = arrayText.find(']', start + 1);
+    if (start == std::string::npos || end == std::string::npos || end <= start + 1) {
+        return values;
+    }
+    std::string body = arrayText.substr(start + 1, end - start - 1);
+    std::stringstream ss(body);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        std::string trimmed = trim(token);
+        if (trimmed.empty()) {
+            continue;
+        }
+        try {
+            values.push_back(std::stod(trimmed));
+        } catch (...) {
+            // ignore conversion failures
+        }
+    }
+    return values;
+}
+
+std::string readFileToString(const std::filesystem::path& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return {};
+    }
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    return ss.str();
+}
+
+std::vector<Point2D> loadPointsCsv(const std::filesystem::path& path) {
+    std::vector<Point2D> points;
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return points;
+    }
+
+    std::string header;
+    if (!std::getline(file, header)) {
+        return points;
+    }
+
+    auto headers = splitCsv(header);
+    int gxIndex = -1;
+    int gyIndex = -1;
+    for (std::size_t i = 0; i < headers.size(); ++i) {
+        std::string h = trim(headers[i]);
+        if (h == "gx" || h == "gx_g") {
+            gxIndex = static_cast<int>(i);
+        } else if (h == "gy" || h == "gy_g") {
+            gyIndex = static_cast<int>(i);
+        }
+    }
+    if (gxIndex < 0 || gyIndex < 0) {
+        return points;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        auto tokens = splitCsv(line);
+        if (tokens.size() <= static_cast<std::size_t>(std::max(gxIndex, gyIndex))) {
+            continue;
+        }
+        try {
+            double gx = std::stod(trim(tokens[gxIndex]));
+            double gy = std::stod(trim(tokens[gyIndex]));
+            points.push_back(Point2D{gx, gy});
+        } catch (...) {
+            // skip malformed rows
+        }
+    }
+    return points;
+}
+
+std::vector<SimulationPipeline::TrajectorySample> loadTrajectoryCsv(const std::filesystem::path& path) {
+    std::vector<SimulationPipeline::TrajectorySample> samples;
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return samples;
+    }
+
+    std::string header;
+    if (!std::getline(file, header)) {
+        return samples;
+    }
+
+    auto headers = splitCsv(header);
+    int idxTime = -1;
+    int idxPx = -1;
+    int idxPy = -1;
+    int idxPz = -1;
+    int idxVx = -1;
+    int idxVy = -1;
+    int idxVz = -1;
+
+    for (std::size_t i = 0; i < headers.size(); ++i) {
+        std::string h = trim(headers[i]);
+        if (h == "timestamp") {
+            idxTime = static_cast<int>(i);
+        } else if (h == "pos_x") {
+            idxPx = static_cast<int>(i);
+        } else if (h == "pos_y") {
+            idxPy = static_cast<int>(i);
+        } else if (h == "pos_z") {
+            idxPz = static_cast<int>(i);
+        } else if (h == "vel_x") {
+            idxVx = static_cast<int>(i);
+        } else if (h == "vel_y") {
+            idxVy = static_cast<int>(i);
+        } else if (h == "vel_z") {
+            idxVz = static_cast<int>(i);
+        }
+    }
+
+    if (idxTime < 0 || idxPx < 0 || idxPy < 0 || idxPz < 0 || idxVx < 0 || idxVy < 0 || idxVz < 0) {
+        return samples;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        auto tokens = splitCsv(line);
+        if (tokens.size() <= static_cast<std::size_t>(std::max({idxTime, idxPx, idxPy, idxPz, idxVx, idxVy, idxVz}))) {
+            continue;
+        }
+        try {
+            SimulationPipeline::TrajectorySample sample;
+            sample.timestamp = std::stod(trim(tokens[idxTime]));
+            sample.position = Vec3{std::stod(trim(tokens[idxPx])),
+                                   std::stod(trim(tokens[idxPy])),
+                                   std::stod(trim(tokens[idxPz]))};
+            sample.velocity = Vec3{std::stod(trim(tokens[idxVx])),
+                                   std::stod(trim(tokens[idxVy])),
+                                   std::stod(trim(tokens[idxVz]))};
+            samples.push_back(sample);
+        } catch (...) {
+            // ignore malformed rows
+        }
+    }
+
+    return samples;
+}
+
+}  // namespace
 
 SimulationPipeline::SimulationPipeline()
     : profile_{{{2.0, 2.5, 0.0},
@@ -220,6 +513,168 @@ void SimulationPipeline::setDatasetPlaybackSpeed(double speed) {
     datasetPlaybackSpeed_ = std::clamp(speed, 0.01, 10.0);
 }
 
+bool SimulationPipeline::loadProcessedResults(const std::string& directory) {
+    namespace fs = std::filesystem;
+
+    fs::path input(directory);
+    fs::path baseDir;
+    fs::path resultsPath;
+
+    if (fs::is_directory(input)) {
+        baseDir = input;
+        resultsPath = baseDir / "results.json";
+    } else {
+        resultsPath = input;
+        baseDir = resultsPath.parent_path();
+    }
+
+    if (resultsPath.empty() || !fs::exists(resultsPath)) {
+        return false;
+    }
+
+    std::vector<Point2D> steadyPoints = loadPointsCsv(baseDir / "steady_points.csv");
+    std::vector<Point2D> envelopePoints = loadPointsCsv(baseDir / "envelope.csv");
+    std::vector<Point2D> processedPoints = loadPointsCsv(baseDir / "processed_points.csv");
+
+    if (steadyPoints.empty() && processedPoints.empty()) {
+        return false;
+    }
+    if (processedPoints.empty()) {
+        processedPoints = steadyPoints;
+    }
+    if (steadyPoints.empty()) {
+        steadyPoints = processedPoints;
+    }
+
+    std::string jsonText = readFileToString(resultsPath);
+    if (jsonText.empty()) {
+        return false;
+    }
+
+    stop();
+    useDataset_ = false;
+    dataset_.clear();
+    datasetIndex_ = 0;
+    datasetAccumulator_ = 0.0;
+    datasetFinished_ = false;
+
+    clearProcessedData();
+
+    processedPoints_ = std::move(processedPoints);
+    steadyStatePoints_ = std::move(steadyPoints);
+
+    double alphaFromResults = extractNumber(jsonText, "alpha", envelopeAlpha_);
+    envelopeAlpha_ = std::max(0.0, alphaFromResults);
+    envelope_.setAlpha(envelopeAlpha_);
+    envelope_.clear();
+    for (const auto& pt : steadyStatePoints_) {
+        envelope_.addPoint(pt.x, pt.y);
+    }
+    if (!envelopePoints.empty()) {
+        envelopeHull_ = std::move(envelopePoints);
+    } else {
+        envelopeHull_ = envelope_.calculateEnvelope();
+    }
+
+    if (!processedPoints_.empty()) {
+        ProcessedPoint last{};
+        last.gx = processedPoints_.back().x;
+        last.gy = processedPoints_.back().y;
+        lastProcessed_ = last;
+    }
+
+    loadedMetrics_ = LoadedMetrics{};
+    loadedMetrics_.hasData = true;
+    loadedMetrics_.steadyCount = extractSize(jsonText, "steady_point_count", 0);
+    loadedMetrics_.maxGx = extractNumber(jsonText, "max_gx", 0.0);
+    loadedMetrics_.maxGy = extractNumber(jsonText, "max_gy", 0.0);
+    loadedMetrics_.envelopeArea = extractNumber(jsonText, "envelope_area", 0.0);
+    loadedMetrics_.alpha = envelopeAlpha_;
+
+    // Validation metrics
+    const std::string validationJson = extractObject(jsonText, "validation");
+    if (!validationJson.empty()) {
+        loadedMetrics_.rSquared = extractNumber(validationJson, "r_squared", 0.0);
+        loadedMetrics_.frictionMu = extractNumber(validationJson, "friction_mu", 0.0);
+        loadedMetrics_.frictionViolation = extractNumber(validationJson, "friction_violation_ratio", 0.0);
+        loadedMetrics_.frictionMax = extractNumber(validationJson, "friction_max_magnitude", 0.0);
+        double haus = extractNumber(validationJson, "hausdorff_distance", std::numeric_limits<double>::quiet_NaN());
+        if (std::isfinite(haus)) {
+            loadedMetrics_.hausdorff = haus;
+        }
+    }
+
+    // Quality & analytics
+    analytics_ = AnalyticsResults{};
+    const std::string qualityJson = extractObject(jsonText, "quality");
+    if (!qualityJson.empty()) {
+        analytics_.quality.sampleCount = extractSize(qualityJson, "sample_count", 0);
+        analytics_.quality.meanSamplingInterval = extractNumber(qualityJson, "mean_dt", 0.0);
+        analytics_.quality.nominalFrequency = extractNumber(qualityJson, "nominal_frequency", 0.0);
+        analytics_.quality.samplingJitter = extractNumber(qualityJson, "jitter", 0.0);
+        analytics_.quality.missingDataRate = extractNumber(qualityJson, "missing_rate", 0.0);
+        analytics_.quality.saturationAccelRate = extractNumber(qualityJson, "accel_saturation_rate", 0.0);
+        analytics_.quality.saturationGyroRate = extractNumber(qualityJson, "gyro_saturation_rate", 0.0);
+        analytics_.hasQuality = true;
+    }
+
+    const std::string timeSyncJson = extractObject(jsonText, "time_sync");
+    if (!timeSyncJson.empty()) {
+        analytics_.timeSync.valid = extractBool(timeSyncJson, "valid", false);
+        analytics_.timeSync.offset = extractNumber(timeSyncJson, "offset", 0.0);
+        analytics_.timeSync.peakCorrelation = extractNumber(timeSyncJson, "peak_correlation", 0.0);
+        analytics_.hasTimeSync = analytics_.timeSync.valid;
+    }
+
+    const std::string allanAccelJson = extractObject(jsonText, "allan_accel");
+    if (!allanAccelJson.empty()) {
+        analytics_.accelAllan.tau = parseDoubleArray(extractArray(allanAccelJson, "tau"));
+        analytics_.accelAllan.sigmaX = parseDoubleArray(extractArray(allanAccelJson, "sigma_x"));
+        analytics_.accelAllan.sigmaY = parseDoubleArray(extractArray(allanAccelJson, "sigma_y"));
+        analytics_.accelAllan.sigmaZ = parseDoubleArray(extractArray(allanAccelJson, "sigma_z"));
+        analytics_.accelAllan.sampleInterval = extractNumber(allanAccelJson, "sample_interval", 0.0);
+    }
+
+    const std::string allanGyroJson = extractObject(jsonText, "allan_gyro");
+    if (!allanGyroJson.empty()) {
+        analytics_.gyroAllan.tau = parseDoubleArray(extractArray(allanGyroJson, "tau"));
+        analytics_.gyroAllan.sigmaX = parseDoubleArray(extractArray(allanGyroJson, "sigma_x"));
+        analytics_.gyroAllan.sigmaY = parseDoubleArray(extractArray(allanGyroJson, "sigma_y"));
+        analytics_.gyroAllan.sigmaZ = parseDoubleArray(extractArray(allanGyroJson, "sigma_z"));
+        analytics_.gyroAllan.sampleInterval = extractNumber(allanGyroJson, "sample_interval", 0.0);
+    }
+
+    analytics_.hasAllan = !analytics_.accelAllan.tau.empty() || !analytics_.gyroAllan.tau.empty();
+
+    const std::string mcJson = extractObject(jsonText, "monte_carlo");
+    if (!mcJson.empty()) {
+        loadedMetrics_.monteCarloEnabled = extractBool(mcJson, "enabled", false);
+        loadedMetrics_.monteCarloSamples = extractSize(mcJson, "samples", 0);
+        loadedMetrics_.mcMeanGx = extractNumber(mcJson, "mean_gx", 0.0);
+        loadedMetrics_.mcMeanGy = extractNumber(mcJson, "mean_gy", 0.0);
+        loadedMetrics_.mcMeanArea = extractNumber(mcJson, "mean_area", 0.0);
+
+        auto gxCI = parseDoubleArray(extractArray(mcJson, "gx_ci_95"));
+        if (gxCI.size() == 2) {
+            loadedMetrics_.mcGxCI = {gxCI[0], gxCI[1]};
+        }
+        auto gyCI = parseDoubleArray(extractArray(mcJson, "gy_ci_95"));
+        if (gyCI.size() == 2) {
+            loadedMetrics_.mcGyCI = {gyCI[0], gyCI[1]};
+        }
+        auto areaCI = parseDoubleArray(extractArray(mcJson, "area_ci_95"));
+        if (areaCI.size() == 2) {
+            loadedMetrics_.mcAreaCI = {areaCI[0], areaCI[1]};
+        }
+    } else {
+        loadedMetrics_.monteCarloEnabled = false;
+    }
+
+    loadedTrajectory_ = loadTrajectoryCsv(baseDir / "trajectory.csv");
+
+    return true;
+}
+
 bool SimulationPipeline::computeAnalytics() {
     const std::vector<ImuData>& preferred = !dataset_.empty() ? dataset_ : rawHistory_;
     const std::vector<ImuData>& source = !preferred.empty() ? preferred : rawHistory_;
@@ -359,6 +814,8 @@ void SimulationPipeline::clearProcessedData() {
     analytics_ = AnalyticsResults{};
     monteCarloSamples_.clear();
     monteCarloEnvelope_.clear();
+    loadedMetrics_ = LoadedMetrics{};
+    loadedTrajectory_.clear();
 }
 
 void SimulationPipeline::setEnvelopeAlpha(double alpha) {

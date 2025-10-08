@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.exe
+
+# IDE files
+.vscode/
+*.suo
+*.user
+*.sln
+*.vcxproj
+*.vs/
+
+# Other
+imgui.ini
+__pycache__/

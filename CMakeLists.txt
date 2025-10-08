@@ -34,11 +34,24 @@ add_executable(gg_gui
     gui/SimulationPipeline.cpp
 )
 
+add_executable(gg_pipeline_cli
+    src/pipeline_cli.cpp
+    vision/dataset.cpp
+    vision/vio_stub.cpp
+)
+
 target_include_directories(gg_gui
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/gui
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_include_directories(gg_pipeline_cli
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/vision
 )
 
 target_link_libraries(gg_gui
@@ -50,10 +63,17 @@ target_link_libraries(gg_gui
         GLEW::GLEW
 )
 
+target_link_libraries(gg_pipeline_cli
+    PRIVATE
+        gg_core
+)
+
 if (MSVC)
     target_compile_options(gg_core PRIVATE /W4 /permissive-)
     target_compile_options(gg_gui PRIVATE /W4 /permissive-)
+    target_compile_options(gg_pipeline_cli PRIVATE /W4 /permissive-)
 else()
     target_compile_options(gg_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(gg_gui PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(gg_pipeline_cli PRIVATE -Wall -Wextra -Wpedantic)
 endif()

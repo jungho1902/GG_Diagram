@@ -46,6 +46,7 @@ GuiApplication::GuiApplication() {
     initWindow();
     initImGui();
     pipeline_.setDatasetPlaybackSpeed(datasetPlayback_);
+    resultsDir_ = "runs/output";
 }
 
 GuiApplication::~GuiApplication() {
@@ -153,6 +154,7 @@ void GuiApplication::drawControls() {
         pipeline_.reset();
         exportStatus_.clear();
         datasetStatus_.clear();
+        resultsStatus_.clear();
         analyticsStatus_.clear();
         monteCarloStatus_.clear();
     }
@@ -199,6 +201,22 @@ void GuiApplication::drawControls() {
     if (pipeline_.useDataset() && pipeline_.hasDataset()) {
         ImGui::Text("Dataset points: %zu", pipeline_.datasetSize());
         ImGui::Text("Playback status: %s", pipeline_.datasetFinished() ? "completed" : (pipeline_.isRunning() ? "running" : "ready"));
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Processed Results");
+    ImGui::InputText("Results Directory", &resultsDir_);
+    if (ImGui::Button("Load Results")) {
+        if (pipeline_.loadProcessedResults(resultsDir_)) {
+            resultsStatus_ = "Loaded processed results";
+            analyticsStatus_ = "Analytics loaded from results.json";
+            monteCarloStatus_.clear();
+        } else {
+            resultsStatus_ = "Failed to load processed results";
+        }
+    }
+    if (!resultsStatus_.empty()) {
+        ImGui::TextWrapped("%s", resultsStatus_.c_str());
     }
 
     ImGui::Separator();
@@ -543,6 +561,41 @@ void GuiApplication::drawAnalytics() {
     }
 
     const auto& analytics = pipeline_.analytics();
+
+    if (pipeline_.hasLoadedMetrics()) {
+        const auto& metrics = pipeline_.loadedMetrics();
+        ImGui::Separator();
+        ImGui::Text("Loaded Results Summary");
+        ImGui::Text("Steady samples: %zu", metrics.steadyCount);
+        ImGui::Text("Max |Gx|: %.3f g", metrics.maxGx);
+        ImGui::Text("Max |Gy|: %.3f g", metrics.maxGy);
+        ImGui::Text("Envelope area: %.3f g^2 (alpha=%.3f)", metrics.envelopeArea, metrics.alpha);
+        ImGui::Text("R^2: %.3f", metrics.rSquared);
+        if (metrics.frictionMu > 0.0) {
+            ImGui::Text("Friction μ: %.2f", metrics.frictionMu);
+            ImGui::Text("Violation ratio: %.3f", metrics.frictionViolation);
+            ImGui::Text("Max magnitude: %.3f g", metrics.frictionMax);
+        }
+        if (metrics.hausdorff) {
+            ImGui::Text("Hausdorff distance: %.3f g", *metrics.hausdorff);
+        }
+        if (metrics.monteCarloEnabled) {
+            ImGui::Separator();
+            ImGui::Text("Monte Carlo Summary (%zu samples)", metrics.monteCarloSamples);
+            ImGui::Text("Mean max |Gx|: %.3f (95%% CI %.3f–%.3f)", metrics.mcMeanGx, metrics.mcGxCI[0], metrics.mcGxCI[1]);
+            ImGui::Text("Mean max |Gy|: %.3f (95%% CI %.3f–%.3f)", metrics.mcMeanGy, metrics.mcGyCI[0], metrics.mcGyCI[1]);
+            ImGui::Text("Mean envelope area: %.3f (95%% CI %.3f–%.3f)", metrics.mcMeanArea, metrics.mcAreaCI[0], metrics.mcAreaCI[1]);
+        }
+        const auto& traj = pipeline_.loadedTrajectory();
+        if (!traj.empty()) {
+            const auto& last = traj.back();
+            double speedMag = std::sqrt(last.velocity.x * last.velocity.x + last.velocity.y * last.velocity.y + last.velocity.z * last.velocity.z);
+            ImGui::Separator();
+            ImGui::Text("VIO Trajectory (final)");
+            ImGui::Text("Position: (%.2f, %.2f, %.2f) m", last.position.x, last.position.y, last.position.z);
+            ImGui::Text("Speed magnitude: %.2f m/s", speedMag);
+        }
+    }
 
     if (analytics.hasQuality) {
         ImGui::Separator();
