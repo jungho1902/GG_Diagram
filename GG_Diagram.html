@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Dynamics Analysis Pipeline: G-G Diagram Generation</title>
+    <script>
+        MathJax = {
+          tex: {
+            inlineMath: [['$', '$'], ['\\(', '\\)']],
+            displayMath: [['$$', '$$'], ['\\[', '\\]']],
+            tags: 'ams',
+            macros: {
+              b: ['{\\mathbf #1}', 1],
+              g: ['{\\boldsymbol #1}', 1]
+            }
+          },
+          svg: {
+            fontCache: 'global'
+          }
+        };
+    </script>
+    <script type="text/javascript" id="MathJax-script" async
+        src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
+    <style>
+        body {
+            font-family: Georgia, 'Times New Roman', Times, serif;
+            line-height: 1.8;
+            color: #333;
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 20px;
+            background-color: #fdfdfd;
+        }
+        h1, h2, h3, h4 {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            color: #2c3e50;
+            margin-top: 2.5em;
+            margin-bottom: 1em;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        h1 { font-size: 2.2em; border-bottom: 2px solid #2c3e50; }
+        h2 { font-size: 1.8em; }
+        h3 { font-size: 1.5em; }
+        h4 { font-size: 1.2em; font-style: italic; border-bottom: none;}
+        code {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #eee;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .equation {
+            margin: 1.5em 0;
+            padding: 1em;
+            background-color: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            overflow-x: auto;
+            text-align: center;
+        }
+        .note {
+            background-color: #e8f4f8;
+            border-left: 5px solid #3498db;
+            padding: 15px;
+            margin: 20px 0;
+            font-size: 0.95em;
+        }
+        .box {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-weight: bold;
+        }
+        .input-box {
+            background-color: #fffbe6;
+            border: 1px solid #ffe58f;
+        }
+        .param-box {
+            background-color: #f0e6ff;
+            border: 1px solid #d3b5ff;
+        }
+        .output-box {
+            background-color: #e6ffed;
+            border: 1px solid #b3ffc6;
+        }
+        .final-result-box {
+            background-color: #d4edda;
+            border: 2px solid #4CAF50;
+            font-size: 1.1em;
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1.5em;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>A Detailed Pipeline for G-G Diagram Generation and Validation</h1>
+    <p>This document provides a comprehensive, step-by-step methodology for generating a vehicle's G-G diagram using sensor data. The process is structured to be robust, verifiable, and suitable for publication in a scientific journal, complete with a rigorous notation system and uncertainty analysis.</p>
+
+    <!-- =================================================================== -->
+    <!-- SECTION 0: NOTATION                                                 -->
+    <!-- =================================================================== -->
+    <h2>0) Common Notation and Coordinate Systems</h2>
+    <p>We adopt the following notation throughout this document. Vectors are denoted in bold lowercase ($\b{v}$), scalars in normal font ($m$), matrices in bold uppercase ($\b{R}$), and reference frames as superscripts or subscripts ($\{n\}$).</p>
+    <ul>
+        <li><strong>Gravitational Acceleration:</strong> A standard value of $g_0 = 9.80665 \, \mathrm{m/s^2}$ is used.</li>
+        <li><strong>Reference Frames:</strong>
+            <ul>
+                <li>$\{n\}$: Navigation/Inertial Frame (e.g., North-East-Down or East-North-Up). For vehicle dynamics, we define a local ENU-aligned frame where x: forward, y: left, z: up.</li>
+                <li>$\{b\}$: Body Frame (fixed to the vehicle's chassis).</li>
+                <li>$\{c\}$: Camera Frame.</li>
+            </ul>
+        </li>
+        <li><strong>Attitude:</strong> The orientation of the body frame relative to the navigation frame is represented by the rotation matrix $\b{R}_{b}^{n}(\b{q}) \in SO(3)$, parameterized by a unit quaternion $\b{q}$. The inverse rotation is its transpose, $\b{R}_{n}^{b} = (\b{R}_{b}^{n})^\top$.</li>
+        <li><strong>Kinematic Quantities (in Body Frame):</strong> Angular velocity $\g{\omega}^b \in \mathbb{R}^3$ and specific force (acceleration) $\b{a}^b \in \mathbb{R}^3$.</li>
+        <li><strong>Lever Arm (CG to IMU):</strong> The position vector from the vehicle's Center of Gravity (CG) to the IMU sensor, expressed in the body frame: $\b{r}_{\text{cg}\to\text{imu}}^{b} \in \mathbb{R}^3$.</li>
+        <li><strong>Gravity Vector (in Navigation Frame):</strong> $\b{g}^{n} = [0, 0, -g_0]^\top$.</li>
+        <li><strong>Uncertainty Notation:</strong> For an estimated quantity $\hat{x}$, its standard uncertainty is denoted by $u(x)$, and its covariance matrix by $\b{\Sigma}_x$. Uncertainty analysis follows the guidelines of the Guide to the Expression of Uncertainty in Measurement (GUM), with Monte Carlo methods (GUM Supplement 1) applied where necessary, as detailed in Section 11.</li>
+    </ul>
+
+    <!-- =================================================================== -->
+    <!-- PHASE 1: PREPARATION                                                -->
+    <!-- =================================================================== -->
+    <h2>[Phase 1] Preliminary Measurements and Sensor Calibration</h2>
+
+    <h3>1) Vehicle Parameter Identification (Mass, CG, Wheelbase, Track)</h3>
+    <p>These are fundamental static parameters of the vehicle.</p>
+    
+    <div class="input-box">
+        <strong>[INPUT] Required Measurements:</strong> Total vehicle weight ($W$), front/rear axle reactions on a level surface ($F_f^{(0)}, F_r^{(0)}$), front axle reaction on an incline ($F_f^{(\phi)}$), left/right wheel loads on a roll incline ($F_\ell^{(\theta)}, F_r^{(\theta)}$), wheelbase ($L$), and track width ($T$).
+    </div>
+
+    <h4>(a) Longitudinal Center of Gravity (CG) Position</h4>
+    <p>By measuring the vertical reactions at the front and rear axles on a horizontal plane, the longitudinal CG position is determined by the static equilibrium equations. The total weight is $W = F_f^{(0)} + F_r^{(0)}$. The mass is $m = W/g_0$.</p>
+    <div class="equation">
+    $$
+    a = \frac{F_r^{(0)}}{W} L, \qquad b = \frac{F_f^{(0)}}{W} L, \qquad a+b=L
+    $$
+    </div>
+    <p>where $a$ is the distance from the front axle to the CG, and $b$ is the distance from the rear axle to the CG.</p>
+
+    <h4>(b) Center of Gravity (CG) Height (Tilting Method)</h4>
+    <p>The vehicle is tilted by a known pitch angle $\phi$, and the reaction at the front axle, $F_f^{(\phi)}$, is measured. The CG height, $h$, is calculated from the moment balance:</p>
+    <div class="equation">
+    $$
+    F_f^{(\phi)} = \frac{W}{L}\left(b\cos\phi - h\sin\phi\right) \quad \Rightarrow \quad h = \frac{L}{W} \frac{F_f^{(0)}\cos\phi - F_f^{(\phi)}}{\sin\phi}
+    $$
+    </div>
+    
+    <h4>(c) Lateral Center of Gravity (CG) Offset (Roll Tilt Method)</h4>
+    <p>With the vehicle on a surface tilted by a roll angle $\theta$, the loads on the left ($F_\ell^{(\theta)}$) and right ($F_r^{(\theta)}$) wheels are measured. The lateral offset $y_{\text{cg}}$ from the vehicle's centerline is:</p>
+    <div class="equation">
+    $$
+    y_{\text{cg}} = \frac{T}{2} \frac{F_\ell^{(\theta)}-F_r^{(\theta)}}{W\cos\theta} - \frac{h\tan\theta}{2}
+    $$
+    </div>
+    
+    <div class="note">
+        <strong>Uncertainty Propagation:</strong> For each derived parameter (e.g., $h$), uncertainty is quantified. If $N$ repeated measurements are taken, the mean is $\bar{x}$ and the standard uncertainty is $u(x) = s_x/\sqrt{N}$, where $s_x$ is the sample standard deviation. The uncertainty of the final calculated value is found by first-order Taylor expansion (linearization), where $\b{\Sigma}_{y} = \b{J} \b{\Sigma}_{x} \b{J}^\top$. See Section 11 for details.
+    </div>
+
+    <h3>2) Tire Characteristics (Static Friction & Rolling Resistance)</h3>
+
+    <h4>(a) Static Friction Coefficient ($\mu_s$)</h4>
+    <div class="input-box">
+        <strong>[INPUT] Required Tests:</strong> Maximum acceleration/braking test on a level surface to find $a_{x,\max}$, or an incline test to find the maximum angle $\alpha$ before slipping.
+    </div>
+    <p>This is estimated via two common methods:</p>
+    <div class="equation">
+    $$
+    \mu_s \approx \frac{a_{x,\max}}{g_0} \quad \text{(from acceleration test)} \qquad \text{or} \qquad \mu_s \approx \tan\alpha \quad \text{(from incline test)}
+    $$
+    </div>
+
+    <h4>(b) Rolling Resistance Coefficient ($c_{\mathrm{rr}}$)</h4>
+    <div class="input-box">
+        <strong>[INPUT] Required Test:</strong> Coast-down test data (vehicle velocity $v$ and longitudinal acceleration $a_x$ over time).
+    </div>
+    <p>During a coast-down test at low speeds where aerodynamic drag is negligible, the mean longitudinal deceleration $a_x$ is measured.</p>
+    <div class="equation">
+    $$
+    c_{\mathrm{rr}} \approx -\frac{a_x}{g_0}
+    $$
+    </div>
+    <p>If higher speeds are considered, the aerodynamic term must be included: $a_x \simeq -g_0 c_{\mathrm{rr}} - \frac{1}{2m}\rho A C_D v^2$, where $\rho$ is air density, $A$ is frontal area, and $C_D$ is the drag coefficient.</p>
+
+
+    <h3>3) Sensor Calibration</h3>
+    
+    <h4>(a) IMU Error Model</h4>
+    <p>The raw measurements from the accelerometer ($\b{a}_m$) and gyroscope ($\g{\omega}_m$) are modeled as:</p>
+    <div class="equation">
+    $$
+    \begin{aligned}
+    \b{a}_m &= \b{S}_a \b{a}^{b} + \b{b}_a + \b{n}_a \\
+    \g{\omega}_m &= \b{S}_g \g{\omega}^{b} + \b{b}_g + \b{n}_g
+    \end{aligned}
+    $$
+    </div>
+    <p>where $\b{S}_{(\cdot)} \approx \b{I}+\Delta\b{S}$ is the scale factor and non-orthogonality matrix, $\b{b}_{(\cdot)}$ is the bias vector, and $\b{n}_{(\cdot)}$ is white Gaussian noise.</p>
+    
+    <h4>(b) Allan Variance (from Static Data)</h4>
+    <div class="input-box">
+        <strong>[INPUT] Required Data:</strong> Long-duration (hours) static data log from the IMU.
+    </div>
+    <p>Allan variance is used to characterize the stochastic noise properties of the IMU. For a time series of averaged data over an interval $\tau$, the Allan standard deviation is:</p>
+    <div class="equation">
+    $$
+    \sigma_y(\tau) = \sqrt{\frac{1}{2(M-1)}\sum_{k=1}^{M-1}\big(\bar{y}_{k+1}-\bar{y}_k\big)^2 }
+    $$
+    </div>
+    <p>From the log-log plot of $\sigma_y(\tau)$ vs. $\tau$:</p>
+    <ul>
+        <li>A slope of $-1/2$ corresponds to <strong>Angle/Velocity Random Walk</strong> (white noise density, $N$). We find $N = \sigma_y(\tau)\sqrt{\tau}$ in this region.</li>
+        <li>A slope of $0$ (the flat bottom of the curve) corresponds to <strong>Bias Instability</strong> ($B$). We find $B \simeq \min\big(\sigma_y(\tau)\big)$.</li>
+    </ul>
+    <div class="output-box">
+        <strong>[OUTPUT] Processed Values:</strong> Noise densities ($N_a, N_g$) and bias instability parameters ($B_a, B_g$). These are used to construct the process noise covariance matrix $\b{Q}$ for the state estimator (see Section 7). For an EKF, we define $Q_a = N_a^2\mathbf{I}$, $Q_g = N_g^2\mathbf{I}$ for the white noise, and the random walk for the bias terms are modeled with variances $Q_{ba} = K_{ba}^2\mathbf{I}$, $Q_{bg} = K_{bg}^2\mathbf{I}$, where $K$ relates to the bias instability.
+    </div>
+
+    <h4>(c) Camera Intrinsics and Extrinsics</h4>
+    <p>A standard checkerboard pattern is used to estimate the camera intrinsic matrix $\b{K}$ and distortion coefficients $\g{\kappa}$. The extrinsic parameters (relative pose between IMU and camera), $(\b{R}_{b}^{c}, \b{p}_{b}^{c})$, are determined using a hand-eye calibration procedure.</p>
+
+
+    <!-- =================================================================== -->
+    <!-- PHASE 2: PROCESSING                                                 -->
+    <!-- =================================================================== -->
+    <h2>[Phase 2] Data Processing and State Estimation</h2>
+
+    <h3>4) Time Synchronization and Data Quality Verification</h3>
+    
+    <h4>(a) Time Offset Estimation (Cross-Correlation)</h4>
+    <div class="input-box">
+        <strong>[INPUT] Required Data:</strong> Time-series data from at least two sensors measuring a related quantity (e.g., IMU yaw rate and vision-based yaw rate).
+    </div>
+    <p>For two signals, $x(t)$ and $y(t)$, the time offset $\Delta t^\star$ is the lag $\tau$ that maximizes their cross-correlation function $R_{xy}(\tau)$:</p>
+    <div class="equation">
+    $$
+    \Delta t^\star = \arg\max_{\tau} R_{xy}(\tau), \quad \text{where} \quad R_{xy}(\tau) = \int x(t) y(t+\tau) dt
+    $$
+    </div>
+    <div class="output-box">
+        <strong>[PROCESSED] Time Offset:</strong> The calculated $\Delta t^\star$ is applied to correct the timestamps of one of the data streams to ensure synchronization.
+    </div>
+    
+    <h4>(b) Data Quality Metrics</h4>
+    <p>Before processing, the data is screened based on quality metrics. This is a critical validation step.</p>
+    <div class="param-box">
+        <strong>[DECISION PARAMETER] Quality Thresholds:</strong> Set acceptable limits for sampling jitter ($\delta f$), saturation percentage ($\rho_{\text{sat}}$), and missing data rate ($\rho_{\text{miss}}$).
+    </div>
+    
+
+    <h3>5) IMU Data Refinement to Pure CG Acceleration</h3>
+    <p>This section details the transformation of raw IMU data into the clean, physically meaningful acceleration of the vehicle's CG in the navigation frame.</p>
+    
+    <h4>(a) Attitude Estimation (AHRS)</h4>
+    <p>An Attitude and Heading Reference System (AHRS) algorithm (e.g., Mahony, Madgwick, or an ESKF) fuses accelerometer and gyroscope data to estimate the vehicle's orientation quaternion, $\b{q}$. The quaternion kinematics are given by:</p>
+    <div class="equation">
+    $$
+    \dot{\b{q}} = \frac{1}{2} \g{\Omega}(\g{\omega}_m - \hat{\b{b}}_g) \b{q}, \qquad \text{where} \quad
+    \g{\Omega}(\g{\omega}) =
+    \begin{bmatrix}
+    0 & -\g{\omega}^\top \\
+    \g{\omega} & -[\g{\omega}\times]
+    \end{bmatrix}
+    $$
+    </div>
+    
+    <h4>(b) Gravity Compensation</h4>
+    <p>First, the estimated bias $\hat{\b{b}}_a$ is subtracted from the raw accelerometer reading to get the specific force in the body frame: $\b{a}^{b}_{\text{lin}} = \b{a}_m - \hat{\b{b}}_a$. This is then rotated into the navigation frame, and the gravity vector is added (effectively removing it) to yield the linear acceleration at the IMU's location:</p>
+    <div class="equation">
+    $$
+    \b{a}^{n}_{\text{imu}} = \b{R}_{b}^{n}(\b{q}) \b{a}^{b}_{\text{lin}} + \b{g}^{n}
+    $$
+    </div>
+    
+    <h4>(c) Lever Arm Correction (Rigid Body Kinematics)</h4>
+    <p>To find the acceleration at the CG, we must account for the rotational effects due to the lever arm $\b{r} = \b{r}_{\text{cg}\to\text{imu}}^{b}$. The relation between acceleration at the CG ($\b{a}_{\text{cg}}$) and at the IMU ($\b{a}_{\text{imu}}$) in the body frame is:</p>
+    <div class="equation">
+    $$
+    \b{a}^{b}_{\text{cg}} = \b{a}^{b}_{\text{lin}} - \left(\g{\alpha}^b \times \b{r}\right) - \left(\g{\omega}^b \times (\g{\omega}^b \times \b{r})\right)
+    $$
+    </div>
+    <p>Here, the angular acceleration $\g{\alpha}^b = \frac{d\g{\omega}^b}{dt}$ is computed via a low-noise differentiation of the gyroscope signal. Finally, this CG acceleration is rotated into the navigation frame.</p>
+    <div class="output-box">
+        <strong>[OUTPUT 1] CG Acceleration in Navigation Frame:</strong> This is the primary input for G-G diagram construction.
+        <div class="equation">
+        $$
+        \boxed{ \b{a}^{n}_{\text{cg}} = \b{R}_{b}^{n}(\b{q}) \b{a}^{b}_{\text{cg}} + \b{g}^{n} }
+        $$
+        </div>
+    </div>
+
+
+    <h3>6) Vision: Feature Extraction and Up-to-Scale 3D Motion</h3>
+    <p>For each pair of consecutive frames ($k, k+1$), matched feature points $\{\b{u}_i\}$ are found. After distortion correction and normalization, the Essential matrix $\b{E}$ is estimated using algorithms like RANSAC, satisfying the epipolar constraint:</p>
+    <div class="equation">
+    $$
+    \b{E} = [\hat{\b{t}}\times]\b{R}, \quad \text{s.t.} \quad \b{u}'^\top \b{E} \b{u} = 0
+    $$
+    </div>
+    <p>$\b{E}$ is decomposed to find the relative rotation $\b{R} \in SO(3)$ and the direction of translation $\hat{\b{t}} \in \mathbb{S}^2$. The correct solution is chosen based on triangulation checks. Chaining these relative poses yields an up-to-scale trajectory $(\tilde{\b{p}}, \tilde{\b{v}})$.</p>
+
+    <h3>7) Tightly-Coupled Visual-Inertial Odometry (VIO) using EKF</h3>
+    <p>A tightly-coupled Extended Kalman Filter (EKF) fuses IMU and visual data to produce a robust and accurate state estimate, including scale.</p>
+    
+    <h4>(a) State Vector (Error-State EKF Formulation)</h4>
+    <p>The state vector typically includes position, velocity, orientation, sensor biases, and the visual scale factor:</p>
+    <div class="equation">
+    $$
+    \b{x} = \big[\, \b{p}^{n}, \, \b{v}^{n}, \, \b{q}_{b}^{n}, \, \b{b}_g, \, \b{b}_a, \, s \, \big]^\top
+    $$
+    </div>
+    <p>where $s > 0$ is the metric scale factor that maps the up-to-scale visual trajectory to the metric world.</p>
+    
+    <h4>(b) Continuous-Time Process Model</h4>
+    <p>The state dynamics are modeled by standard kinematics, driven by IMU measurements:</p>
+    <div class="equation">
+    $$
+    \begin{aligned}
+    \dot{\b{p}}^{n} &= \b{v}^{n} \\
+    \dot{\b{v}}^{n} &= \b{R}_{b}^{n}(\b{q})\left(\b{a}_m - \b{b}_a - \b{n}_a\right) + \b{g}^{n} \\
+    \dot{\b{q}} &= \frac{1}{2} \g{\Omega}(\g{\omega}_m - \b{b}_g - \b{n}_g) \b{q} \\
+    \dot{\b{b}}_a &= \b{n}_{ba}, \quad \dot{\b{b}}_g = \b{n}_{bg}, \quad \dot{s} = n_s
+    \end{aligned}
+    $$
+    </div>
+    <p>The noise terms $\b{n}_{(\cdot)}$ are modeled as white Gaussian processes, with covariance matrix $\b{Q}$ constructed from the parameters found via Allan variance in Section 3(b). For discrete implementation, IMU pre-integration is used to propagate the state and covariance between visual keyframes.</p>
+    
+    <h4>(c) Vision Measurement Model (Relative Pose)</h4>
+    <p>When a new visual keyframe is available, a measurement update is performed. Given a relative rotation $\b{R}_{v}$ and unit translation $\hat{\b{t}}_{v}$ from vision between frames $k$ and $k+\ell$, we form a residual with the EKF's prediction. The predicted translation direction, referenced in the camera frame at time $k$, is:</p>
+    <div class="equation">
+    $$
+    \hat{\b{t}}_{\text{pred}} =
+    \frac{(\b{R}_{n}^{c}|_{k}) (\b{p}^{n}_{k+\ell} - \b{p}^{n}_{k})}{\left\|(\b{R}_{n}^{c}|_{k}) (\b{p}^{n}_{k+\ell} - \b{p}^{n}_{k})\right\|}, \quad \text{where} \quad
+    \b{R}_{n}^{c}|_{k} = (\b{R}_{b}^{c})^\top (\b{R}_{b}^{n}(\b{q}_k))^\top
+    $$
+    </div>
+    <p>The measurement residual vector $\b{r}$ consists of the rotational error and the scale error:</p>
+    <div class="equation">
+    $$
+    \b{r}_{\theta} = \text{Log}\left( \b{R}_{v}^\top \left( \b{R}_{c}^{n}|_{k+\ell} \b{R}_{n}^{c}|_{k} \right) \right), \quad
+    r_s = \left\| \b{p}^{n}_{k+\ell} - \b{p}^{n}_{k} \right\| - s \cdot d_v
+    $$
+    </div>
+    <p>where $\text{Log}(\cdot)$ is the map from $SO(3) \to \mathbb{R}^3$, and $d_v$ is the scalar magnitude of the up-to-scale displacement from vision. This residual is linearized with respect to the state error $\delta\b{x}$ via a Jacobian matrix $\b{H}_k$, and the EKF update is performed: $\b{r} = \mathbf{z} - \mathbf{h}(\hat{\mathbf{x}}) \approx \b{H} \delta\b{x} + \g{\nu}$, where $\g{\nu} \sim \mathcal{N}(0, \b{R})$.</p>
+
+    <div class="output-box">
+        <strong>[OUTPUT 2] Estimated Vehicle Velocity:</strong> The EKF provides a filtered, accurate estimate of the vehicle's velocity in the navigation frame, $\hat{\b{v}}^{n}_k$.
+    </div>
+    
+    <!-- =================================================================== -->
+    <!-- PHASE 3: G-G DIAGRAM                                                -->
+    <!-- =================================================================== -->
+    <h2>[Phase 3] G-G Diagram Generation and Validation</h2>
+    
+    <h3>8) Quasi-Steady-State Filter</h3>
+    <p>To create a G-G diagram that represents the vehicle's performance limits, we must filter out transient maneuvers. Data points are selected only if they meet quasi-steady-state criteria over a time window of length $\tau_w$.</p>
+    <div class="param-box">
+        <strong>[DECISION PARAMETER] Quasi-Steady-State Thresholds:</strong>
+        <p>Set thresholds for jerk ($\epsilon_a$), angular acceleration ($\epsilon_\alpha$), and the RMS of the derivatives of longitudinal velocity ($\epsilon_v$) and yaw rate ($\epsilon_r$). Example values: $\epsilon_a = 0.3 \, \mathrm{m/s^3}$, $\epsilon_\alpha = 5 \, \mathrm{deg/s^2}$, $\tau_w = 0.2 \, \mathrm{s}$.</p>
+        <div class="equation">
+        $$
+        \begin{aligned}
+        \left\|\frac{d\b{a}^{n}_{\text{cg}}}{dt}\right\|_\infty &< \epsilon_a \\
+        \left\|\frac{d\g{\omega}^{b}}{dt}\right\|_\infty &< \epsilon_\alpha
+        \end{aligned}
+        $$
+        </div>
+    </div>
+    <p>Only the planar components of the CG acceleration are used for the diagram: $a_x := [\b{a}^{n}_{\text{cg}}]_x$ and $a_y := [\b{a}^{n}_{\text{cg}}]_y$.</p>
+    
+    <h3>9) G-G Envelope Extraction (Alpha Shape)</h3>
+    <p>The filtered data points $\mathcal{S} = \{(G_x, G_y)\}$, where $G_x = a_x/g_0$ and $G_y = a_y/g_0$, form a point cloud. The alpha-shape algorithm is an effective method to extract a non-convex boundary representing the performance envelope.</p>
+    <p>From the Delaunay triangulation $\mathcal{T}$ of the point set, we keep only the simplices (triangles) whose circumcircle radius $R_\triangle$ satisfies $R_\triangle \le 1/\alpha$. The resulting boundary edges form the envelope $\partial \mathcal{S}_\alpha$.</p>
+    <div class="param-box">
+        <strong>[DECISION PARAMETER] Alpha Value ($\alpha$):</strong> This parameter controls the "tightness" of the envelope. A good heuristic is to set $\alpha = c/d_k$, where $d_k$ is the median k-Nearest Neighbor distance of the points and $c \in [1.0, 2.0]$ is an empirical factor.
+    </div>
+    
+    <div class="final-result-box">
+        <strong>[FINAL RESULT 1] The G-G Envelope:</strong> The extracted boundary $\mathcal{E} = \partial \mathcal{S}_\alpha$. This can be smoothed using morphological operations or a curvature-constrained spline for a cleaner final plot.
+    </div>
+    
+    <h3>10) System-Wide Validation</h3>
+    
+    <h4>(a) Kinematic Consistency (Lateral Acceleration)</h4>
+    <p>The lateral acceleration component can be independently checked against the kinematic model $a_{y,\text{model}} = \hat{v}_x \hat{r}$, where $\hat{v}_x$ is the forward velocity and $\hat{r}$ is the yaw rate. We compute the Root Mean Square Error (RMSE) and the coefficient of determination ($R^2$).</p>
+    <div class="equation">
+    $$
+    \text{RMSE} = \sqrt{\frac{1}{N}\sum_{k}(a_{y,k} - a_{y,\text{model},k})^2}, \qquad
+    R^2 = 1 - \frac{\sum_k (a_{y,k} - a_{y,\text{model},k})^2}{\sum_k (a_{y,k} - \bar{a}_{y})^2}
+    $$
+    </div>
+    
+    <h4>(b) Repeatability (Hausdorff Distance)</h4>
+    <p>To quantify the consistency between two tests (A and B), we compute the Hausdorff distance $d_H$ between their respective G-G envelopes $\mathcal{E}_A$ and $\mathcal{E}_B$.</p>
+    <div class="equation">
+    $$
+    d_H(\mathcal{E}_A, \mathcal{E}_B) = \max\left\{ \sup_{\b{a}\in\mathcal{E}_A}\inf_{\b{b}\in\mathcal{E}_B}\|\b{a}-\b{b}\|, \, \sup_{\b{b}\in\mathcal{E}_B}\inf_{\b{a}\in\mathcal{E}_A}\|\b{a}-\b{b}\| \right\}
+    $$
+    </div>
+    <p>This can be normalized by $g_0$ for a unitless metric: $d_H^{(g)} = d_H/g_0$.</p>
+    
+    <h4>(c) Physical Plausibility (Comparison with Tire Limits)</h4>
+    <p>The extracted envelope should be physically sound. The maximum acceleration/deceleration $|G_x|$ and maximum lateral acceleration $|G_y|$ should be less than or approximately equal to the static friction coefficient $\mu_s$ measured in Section 2(a). The rolling resistance $c_{rr}$ may manifest as a small negative offset in the $G_x$ axis at $G_y=0$.</p>
+    
+
+    <h3>11) Final Uncertainty Analysis (ISO GUM & Monte Carlo)</h3>
+    
+    <h4>(a) Linear Uncertainty Propagation (for Acceleration)</h4>
+    <p>We define a vector of all input measurement and calibration parameters:</p>
+    <div class="equation">
+    $$
+    \g{\theta} = \big[\, \b{a}_m, \, \g{\omega}_m, \, \b{q}, \, \b{b}_a, \, \b{b}_g, \, \b{S}_a, \, \b{S}_g, \, \b{r}, \, \ldots \, \big]
+    $$
+    </div>
+    <p>The mapping from these inputs to the final CG acceleration, $\b{a}^{n}_{\text{cg}} = \b{f}(\g{\theta})$, is linearized. The output covariance is then:</p>
+    <div class="equation">
+    $$
+    \b{\Sigma}_{a^{n}} = \b{J}_{\theta} \b{\Sigma}_{\theta} \b{J}_{\theta}^\top + \b{\Sigma}_{\text{proc}}, \quad \text{where} \quad
+    \b{J}_{\theta} = \left. \frac{\partial \b{f}}{\partial \g{\theta}} \right|_{\hat{\g{\theta}}}
+    $$
+    </div>
+    <p>where $\b{\Sigma}_{\theta}$ is the block-diagonal covariance matrix of the inputs and $\b{\Sigma}_{\text{proc}}$ accounts for noise from filtering and differentiation (e.g., in calculating $\g{\alpha}^b$). The G-normalized covariance is $\b{\Sigma}_{G} = \frac{1}{g_0^2}\b{\Sigma}_{a^{n}}$.</p>
+    
+    <h4>(b) Uncertainty of Non-Linear Functions (Envelope Extrema) — GUM S1 Monte Carlo</h4>
+    <p>Quantities like the maximum lateral acceleration, $G_{y,\max} = \max_{(G_x,G_y)\in \mathcal{E}} G_y$, are highly non-linear outputs of the entire pipeline. Their uncertainty is best estimated using a Monte Carlo method:</p>
+    <ol>
+        <li>Draw $M$ samples, $\g{\theta}^{(j)}$, from the input probability distribution, typically $\mathcal{N}(\hat{\g{\theta}}, \b{\Sigma}_\theta)$.</li>
+        <li>For each sample $\g{\theta}^{(j)}$, re-run the entire pipeline (Sections 5–9) to generate a corresponding G-G envelope $\mathcal{E}^{(j)}$ and calculate the quantity of interest (e.g., $G_{y,\max}^{(j)}$).</li>
+        <li>The estimate and its standard uncertainty are the mean and standard deviation of the resulting $M$ output samples:
+            <div class="equation">
+            $$
+            \hat{\mu} = \frac{1}{M}\sum_j G^{(j)}, \qquad
+            u = \sqrt{\frac{1}{M-1}\sum_j (G^{(j)} - \hat{\mu})^2 }
+            $$
+            </div>
+        </li>
+        <li>A 95% confidence interval (CI) is given by $[\hat{\mu} - k \cdot u, \hat{\mu} + k \cdot u]$ (with $k \approx 1.96$ for large $M$) or, more robustly, by the 2.5th and 97.5th percentiles of the output distribution.</li>
+    </ol>
+    
+    <h4>(c) Example Reporting Format</h4>
+    <p>The final results should be reported with their associated uncertainty, providing a complete picture of the measurement's reliability.</p>
+    <div class="final-result-box">
+        <strong>[FINAL RESULT 2] Quantified Performance Metrics:</strong>
+        <p>Maximum Lateral Acceleration: $G_{y,\max} = 1.20 \pm 0.05 \, \text{[g]}$ (95% CI)</p>
+        <p>Maximum Acceleration: $G_{x,\max}^{\text{accel}} = 0.55 \pm 0.03 \, \text{[g]}$ (95% CI)</p>
+        <p>Maximum Braking: $G_{x,\max}^{\text{brake}} = -1.10 \pm 0.06 \, \text{[g]}$ (95% CI)</p>
+        <p>Repeatability: $d_H^{(g)} = 0.04 \pm 0.01$ (mean $\pm$ std. dev. over 5 runs)</p>
+    </div>
+    
+    <hr style="margin: 3em 0;">
+    
+    <h2>Appendix A) Implementation Details</h2>
+    <ul>
+        <li><strong>Angular Acceleration Estimation:</strong> To avoid noise amplification from naive differentiation, a frequency-domain differentiator with Tikhonov regularization can be used:
+        $$ \min_{\g{\alpha}} \ \sum_k \|\g{\alpha}_k - \frac{\g{\omega}_k - \g{\omega}_{k-1}}{\Delta t}\|^2 + \lambda \sum_k \|\g{\alpha}_k - \g{\alpha}_{k-1}\|^2 $$
+        </li>
+        <li><strong>Time Mismatch Uncertainty:</strong> The uncertainty in the time offset estimation, $u(\Delta t)$, can be included in the input covariance matrix $\b{\Sigma}_\theta$ and propagated. Its effect is most pronounced in the jerk-dependent terms.</li>
+        <li><strong>Alpha-Shape Post-processing:</strong> To prevent an overly jagged envelope, the boundary can be fitted with a parametric spline $\b{c}(s)$ that minimizes deviation from the points while being constrained by a maximum curvature $|\kappa| \le \kappa_{\max}$.</li>
+    </ul>
+
+    <h2>Appendix B) Checklist for Reporting and Reproducibility</h2>
+    <ol>
+        <li>Report all calibration values with their standard uncertainty ($\hat{x} \pm u(x)$) and the number of trials ($N$).</li>
+        <li>Include Allan variance log-log plots, clearly marking the regions used to extract noise parameters.</li>
+        <li>State the composition and numerical values of the EKF covariance matrices ($\b{Q}, \b{R}$) and justify their selection based on Section 3(b).</li>
+        <li>Report the estimated time synchronization offset $\Delta t^\star$ and the peak-to-sidelobe ratio of the cross-correlation function $R_{xy}(\tau)$.</li>
+        <li>Provide validation metrics ($R^2$, RMSE, $d_H^{(g)}$) with their 95% confidence intervals.</li>
+        <li>For the Monte Carlo analysis, report the number of samples $M$ (recommended $\ge 10^4$) and the random number generator seed used.</li>
+    </ol>
+
+</body>
+</html>

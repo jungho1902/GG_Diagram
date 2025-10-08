@@ -1,0 +1,2 @@
+/usr/bin/ar qc libgg_core.a CMakeFiles/gg_core.dir/src/analytics.cpp.o CMakeFiles/gg_core.dir/src/attitude_estimator.cpp.o CMakeFiles/gg_core.dir/src/gg_envelope.cpp.o CMakeFiles/gg_core.dir/src/gg_processor.cpp.o CMakeFiles/gg_core.dir/src/quasi_steady_state_filter.cpp.o
+/usr/bin/ranlib libgg_core.a

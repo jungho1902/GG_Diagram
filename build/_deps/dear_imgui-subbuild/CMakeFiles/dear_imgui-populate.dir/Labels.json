@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/CMakeFiles/dear_imgui-populate"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/CMakeFiles/dear_imgui-populate.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/CMakeFiles/dear_imgui-populate-complete.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-build.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-configure.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-download.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-install.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-mkdir.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-patch.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-test.rule"
+		},
+		{
+			"file" : "/mnt/c/Users/\uc2e0\uc815\ud638/GG_GUI/build/_deps/dear_imgui-subbuild/dear_imgui-populate-prefix/src/dear_imgui-populate-stamp/dear_imgui-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"dear_imgui-populate"
+		],
+		"name" : "dear_imgui-populate"
+	}
+}

@@ -1,0 +1,7 @@
+/mnt/c/Users/신정호/GG_GUI/build/CMakeFiles/gg_core.dir
+/mnt/c/Users/신정호/GG_GUI/build/CMakeFiles/gg_gui.dir
+/mnt/c/Users/신정호/GG_GUI/build/CMakeFiles/edit_cache.dir
+/mnt/c/Users/신정호/GG_GUI/build/CMakeFiles/rebuild_cache.dir
+/mnt/c/Users/신정호/GG_GUI/build/vendor/CMakeFiles/imgui.dir
+/mnt/c/Users/신정호/GG_GUI/build/vendor/CMakeFiles/edit_cache.dir
+/mnt/c/Users/신정호/GG_GUI/build/vendor/CMakeFiles/rebuild_cache.dir
