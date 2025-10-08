@@ -1,0 +1,536 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+% Recommended LaTeX Compiler: pdfLaTeX
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{bm} % Added for bold math symbols (\bm or \boldsymbol)
+\usepackage{framed} % Added for note boxes
+\usepackage{siunitx} % Added for unit notation
+\usepackage[hidelinks]{hyperref} % Added for clickable URLs
+\usepackage{mathtools} % For \DeclarePairedDelimiter
+
+% --- Customizations based on feedback ---
+% 1. Box Style: Use snugshade with a background color
+\definecolor{shadecolor}{rgb}{0.9, 0.95, 1.0} % Sets background for snugshade environment
+
+% 2. Vector/Matrix Typography Macros
+\newcommand{\vect}[1]{\bm{#1}}     % For vectors: \vect{v}, \vect{\omega}
+\newcommand{\mat}[1]{\mathbf{#1}}  % For matrices: \mat{R}, \mat{S}
+
+% 3. Auto-sizing Norm Delimiter
+\DeclarePairedDelimiter{\norm}{\lVert}{\rVert}
+% -----------------------------------------
+
+% siunitx settings and g-unit definition
+\sisetup{per-mode = symbol, separate-uncertainty = true, detect-weight = true, detect-family = true}
+\DeclareSIUnit{\gee}{g} % Unit for standard gravity multiple (1 g)
+
+% Operator definitions like argmax, argmin
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{A Comprehensive Pipeline for Vehicle Dynamics Data Analysis: \\ A Detailed Methodology for G-G Diagram Generation and Validation}
+
+\author{\IEEEauthorblockN{Jungho Shin}
+\IEEEauthorblockA{\textit{School of Mechanical Engineering} \\
+\textit{Korea University}\\
+Seoul, Republic of Korea \\
+jungho1902@korea.ac.kr}
+}
+
+\maketitle
+
+\begin{abstract}
+This document proposes a comprehensive and systematic methodology for generating a G-G Diagram, which represents the dynamic performance limits of a vehicle, and for validating its reliability using raw data collected from an on-board Inertial Measurement Unit (IMU) and vision sensors. To ensure the reproducibility and clarity of the research, this paper begins by rigorously defining the mathematical notation, coordinate reference frames, and key physical quantities that will be used throughout the analysis. The proposed pipeline consists of three main stages: (1) preliminary measurements and sensor calibration, (2) data processing and robust state estimation, and (3) final G-G performance envelope extraction and validation. In particular, this paper provides a detailed account of the process for precisely compensating for gravitational and lever arm effects in IMU measurements, the robust estimation of vehicle state (position, velocity, attitude) through Visual-Inertial Odometry (VIO), and the technique for extracting the performance envelope using Quasi-Steady-State filtering and the Alpha-Shape algorithm. Finally, to ensure this research meets the academic standards of science and engineering, the methodology includes a procedure for quantitatively evaluating the reliability of the final results through a Monte Carlo-based uncertainty analysis, guided by the principles of the Guide to the Expression of Uncertainty in Measurement (GUM).
+\end{abstract}
+
+\begin{IEEEkeywords}
+Vehicle Dynamics, G-G Diagram, State Estimation, Sensor Fusion, Inertial Measurement Unit (IMU), Visual-Inertial Odometry (VIO), Uncertainty Analysis, Coordinate Systems
+\end{IEEEkeywords}
+
+\section{Introduction}
+The G-G diagram, which provides an at-a-glance understanding of a vehicle's dynamic performance, is a graph that plots the relationship between a vehicle's longitudinal acceleration (acceleration/deceleration) and its lateral acceleration (cornering). The boundary of this diagram, known as the 'performance envelope,' signifies the physical limits of the acceleration capabilities that a specific vehicle can achieve under given tire and road surface conditions. This provides crucial information for vehicle design, control system development, and driving performance analysis.
+
+To accurately generate such a G-G diagram, it is essential to estimate the pure kinematic acceleration at the vehicle's Center of Gravity (CG) with very high precision. However, sensors like Inertial Measurement Units (IMUs) installed in actual vehicles inevitably contain noise, biases, and scale factor errors. Furthermore, because the sensor's mounting location differs from the CG, it also measures additional accelerations due to the vehicle's rotational motion (the lever arm effect). Therefore, using raw sensor data directly can lead to significant distortions.
+
+The goal of this paper is to systematically address these issues and to present a clear, reproducible pipeline for G-G diagram generation that anyone can follow. To this end, as if designing a precise experiment, we begin with the very first step of analysis: 'defining the language.' That is, before diving into the main content, we will start by clearly defining the common notation and coordinate reference frames to ensure consistency and clarity throughout the entire analysis process. This will serve as an essential foundation for understanding the physical context and assumptions behind the complex equations and algorithms described in the subsequent sections.
+
+\section{Common Notation and Coordinate Systems}
+This section clearly defines the mathematical notation, definitions of physical quantities, and key coordinate reference frames that will be used consistently throughout the paper. This process is analogous to creating a blueprint and standardizing all component specifications before starting construction.
+
+\subsection{Notational Conventions}
+To clearly distinguish between mathematical objects, the following conventions are adopted:
+\begin{itemize}
+    \item \textbf{Scalars:} Physical quantities with magnitude only, such as mass ($m$) and time ($t$), are denoted in italics.
+    \item \textbf{Vectors:} Three-dimensional physical quantities possessing both magnitude and direction, such as velocity ($\vect{v}$) and acceleration ($\vect{a}$), are denoted using the `\vect{}` command. For example, a vector is represented as $\vect{v} = [v_x, v_y, v_z]^\top \in \mathbb{R}^3$.
+    \item \textbf{Matrices:} Two-dimensional arrays with multiple components, such as a rotation matrix ($\mat{R}$) used for coordinate transformations, are denoted using the `\mat{}` command. For example: $\mat{R} \in \mathrm{SO}(3)$.
+    \item \textbf{Frames of Reference:} It is crucial to specify the coordinate frame in which a particular physical quantity is expressed. For instance, the component values of the same velocity vector will differ depending on the frame from which it is observed. To clarify this, a right superscript in curly braces $\{ \cdot \}$ is used to denote the frame's abbreviation. For example, angular velocity expressed in the body frame is denoted as $\vect{\omega}^{\{b\}}$. For readability, this paper will abbreviate this to $\vect{\omega}^b$.
+\end{itemize}
+
+\subsection{Key Constants and Physical Quantities}
+\begin{itemize}
+    \item \textbf{Standard Gravity:} Although Earth's gravity varies slightly with location and altitude, a standard value is used for consistency in engineering analysis. This document consistently uses the value $g_0 = \SI{9.80665}{\meter\per\second\squared}$.
+    \item \textbf{Gravity Vector:} Gravity always acts towards the center of the Earth. The gravity vector expressed in the navigation frame $\{n\}$, which we will define, is denoted as $\vect{g}^{n}$. If the coordinate system has its Z-axis pointing Up, gravity acts in the -Z direction, thus $\vect{g}^{n} = [0, \ 0, \ -g_0]^\top$.
+\end{itemize}
+
+\subsection{Reference Frames}
+To accurately describe the complex three-dimensional motion of a vehicle, we define the following three main coordinate frames. Understanding these three frames is the first step to understanding this entire paper.
+
+\begin{snugshade}
+\noindent \textbf{Core Concept: Why Are Multiple Coordinate Frames Necessary?} \\
+\begin{itemize}
+    \item \textbf{Sensors are 'Egocentric':} An IMU sensor attached to a vehicle measures the acceleration and angular velocity it experiences. These measurements are strictly from the sensor's—and thus the vehicle's—point of view (\textbf{Body Frame}).
+    \item \textbf{We want 'Objective' Motion:} However, what we ultimately want to know is the absolute movement on a map (\textbf{Navigation Frame}). For example, information like, "The car accelerated northeast at \SI{10}{\meter\per\second\squared}."
+    \item \textbf{Therefore, 'Translation' is required:} A process to 'translate' the vehicle-centric measurements (Body Frame) into objective, map-based motion (Navigation Frame) is absolutely necessary. The key to this translation is the vehicle's \textbf{Attitude}.
+\end{itemize}
+\end{snugshade}
+
+\subsubsection{Navigation/Inertial Frame $\{n\}$}
+This frame is like our 'absolute reference' map.
+\begin{itemize}
+    \item \textbf{Definition:} A coordinate system fixed to a specific point on the Earth's surface, which does not move. It is assumed to be an inertial frame for applying Newton's laws of motion ($F=ma$). (Strictly speaking, it is not an inertial frame due to the Earth's rotation and revolution, but this can be neglected for vehicle dynamics analysis.)
+    \item \textbf{Axis Convention:} Typically, ENU (East-North-Up) or NED (North-East-Down) is used. This document adopts \textbf{ENU} for intuitive understanding.
+    \begin{itemize}
+        \item \textbf{X-axis:} East
+        \item \textbf{Y-axis:} North
+        \item \textbf{Z-axis:} Up (opposite to the direction of gravity)
+    \end{itemize}
+   \item \textbf{Role:} It serves as the reference for describing the vehicle's global position, velocity, and acceleration. While the state estimation process describes motion relative to this frame, the X-axis (longitudinal acceleration) and Y-axis (lateral acceleration) of the final G-G diagram are the acceleration components of the vehicle's CG expressed in the \textbf{Body Frame $\{b\}$}.
+\end{itemize}
+
+\subsubsection{Body Frame $\{b\}$}
+This frame is akin to the 'driver's perspective.'
+\begin{itemize}
+    \item \textbf{Definition:} A body-fixed coordinate system rigidly attached to the vehicle's chassis, moving and rotating with the vehicle. The origin of this frame is located at the \textbf{Center of Gravity (CG)}, the reference point for vehicle dynamics.
+    \item \textbf{Axis Convention (based on SAE J670 standard):}
+    \begin{itemize}
+        \item \textbf{X-axis:} \textbf{Forward} direction of the vehicle
+        \item \textbf{Y-axis:} \textbf{Right} direction of the vehicle
+        \item \textbf{Z-axis:} \textbf{Down} direction of the vehicle
+    \end{itemize}
+   
+    \item \textbf{Role:} All on-board sensors, such as accelerometers and gyroscopes, measure physical quantities with respect to this body frame. For example, when a vehicle makes a left turn on a flat surface (a counter-clockwise rotation when viewed from above), the rotation vector points Up according to the right-hand rule. Since the Z-axis of the body frame defined in this paper points Down (positive), this rotation is a \textbf{rotation in the -Z direction}. Consequently, the gyroscope will measure a negative angular velocity about its Z-axis (Yaw rate).
+\end{itemize}
+
+\subsubsection{Camera Frame $\{c\}$}
+This frame is literally the 'camera's perspective.'
+\begin{itemize}
+    \item \textbf{Definition:} A coordinate system with its origin at the optical center of the camera mounted on the vehicle.
+    \item \textbf{Axis Convention (OpenCV standard):}
+    \begin{itemize}
+        \item \textbf{Z-axis:} \textbf{Forward}, along the optical axis of the camera lens
+        \item \textbf{X-axis:} \textbf{Right}, horizontal in the image plane
+        \item \textbf{Y-axis:} \textbf{Down}, vertical in the image plane
+    \end{itemize}
+    \item \textbf{Role:} It is used in Visual Odometry to describe the 3D positions of image feature points and the relative motion of the camera.
+\end{itemize}
+
+\subsection{Attitude Representation}
+Attitude is the orientation information that describes how the 'driver's perspective' ({b}) is tilted and rotated relative to the 'map's reference' ({n}). This attitude information is what makes the 'translation' between the two frames possible.
+
+\begin{itemize}
+    \item \textbf{Rotation Matrix:} The most intuitive way to represent attitude. $\mat{R}_{b}^{n}$ is a $3 \times 3$ matrix that \textbf{transforms a vector expressed in the body frame $\{b\}$ to the navigation frame $\{n\}$}. For example, given a velocity vector $\vect{v}^b$ in the body frame, the velocity vector $\vect{v}^n$ in the navigation frame is calculated as follows:
+    \begin{equation}
+        \vect{v}^n = \mat{R}_{b}^{n} \vect{v}^b
+    \end{equation}
+    The inverse transformation, from the navigation frame to the body frame, is simply calculated using the transpose of the matrix, thanks to the orthogonality property of rotation matrices ($\mat{R}^{-1} = \mat{R}^\top$): $\mat{R}_{n}^{b} = (\mat{R}_{b}^{n})^\top$.
+
+    \item \textbf{Quaternion:} A rotation matrix has 9 components but only 3 degrees of freedom, making it inefficient. It can also encounter computational issues at certain attitudes (Gimbal Lock). A quaternion $\vect{q}$ is a more efficient and robust mathematical tool that uses 4 components ($q_0, q_1, q_2, q_3$) to represent a 3D rotation. Actual state estimation algorithms manage attitude internally as a quaternion and convert it to a rotation matrix $\mat{R}_{b}^{n}(\vect{q})$ as needed.
+\end{itemize}
+
+\subsection{Key Kinematic Variables}
+\begin{itemize}
+    \item \textbf{Angular Velocity, $\vect{\omega}^b \in \mathbb{R}^3$:} This is what a gyroscope measures. It represents how fast the vehicle is rotating about its own X, Y, and Z axes. It is measured \textbf{with respect to the body frame $\{b\}$}.
+
+    \item \textbf{Specific Force, $\vect{f}^b \in \mathbb{R}^3$:} This is what an accelerometer measures, and it is a concept that requires careful understanding.
+    \begin{snugshade}
+    \noindent \textbf{Deep Dive: What is Specific Force?} \\
+    An accelerometer does not directly measure the kinematic acceleration ($\ddot{\vect{x}}$) from Newton's second law. Instead, it measures the \textbf{non-gravitational force} exerted on its internal proof mass.
+    \begin{itemize}
+        \item \textbf{Example 1: Stationary State}
+        An accelerometer resting on a table is kinematically accelerating at \SI{0}{\meter\per\second\squared}. However, it measures the normal force from the table pushing up against gravity. This force is physically directed 'Up,' so the accelerometer detects a specific force equivalent to \SI{+1}{\gee} (approx. \SI{+9.8}{\meter\per\second\squared}) in the upward direction. \textbf{Since the body frame $\{b\}$ defined in this paper has its Z-axis pointing Down, the Z-axis measurement $\vect{f}_z$ of an accelerometer in a stationary, level vehicle will be approximately $-g_0$ (\SI{-9.8}{\meter\per\second\squared}).}
+        \item \textbf{Example 2: Free Fall}
+        An accelerometer in free fall is kinematically accelerating downwards at \SI{9.8}{\meter\per\second\squared}. However, since both the accelerometer and its proof mass are equally affected by gravity alone, there is no non-gravitational force on the proof mass. Therefore, the accelerometer outputs \SI{0}{\gee}.
+    \end{itemize}
+   In conclusion, specific force is equivalent to the \textbf{total kinematic acceleration minus gravitational acceleration}: $\vect{f} = \vect{a}_{\text{kinematic}} - \vect{g}$. To draw a G-G diagram, we need to know the kinematic acceleration $\vect{a}_{\text{kinematic}}$, so it is essential to add back (compensate for) the effect of gravity to the accelerometer's measurement.
+    \end{snugshade}
+    
+    \item \textbf{Lever Arm, $\vect{r}_{\text{cg}\to\text{imu}}^{b} \in \mathbb{R}^3$:} The position vector from the vehicle's Center of Gravity (CG) to the mounting location of the IMU sensor. Since this vector is fixed to the vehicle, it is expressed as a \textbf{constant vector in the body frame $\{b\}$}. The IMU measures acceleration at the sensor's location, so to obtain the acceleration at the CG, which we truly want, we must mathematically calculate and remove the rotational effects (centripetal acceleration: $\vect{\omega}^b \times (\vect{\omega}^b \times \vect{r})$, tangential acceleration: $\vect{\alpha}^b \times \vect{r}$) caused by this lever arm.
+\end{itemize}
+
+\subsection{Uncertainty Notation}
+Every measurement in the real world has error. Quantitatively handling this error is a key factor in determining the reliability of an engineering analysis.
+\begin{itemize}
+    \item An estimated value (our best guess) is denoted with a hat symbol, such as $\hat{x}$.
+    \item The \textbf{standard uncertainty} of that value, i.e., its standard deviation, is denoted as $u(x)$. For example, a mass measurement could be expressed as $m = \SI{1500.5 \pm 0.2}{\kilo\gram}$, where $u(m) = \SI{0.2}{\kilo\gram}$.
+    \item The uncertainty of a vector containing multiple variables is represented by a \textbf{covariance matrix} $\bm{\Sigma}_x$, which includes the uncertainty (variance) of each variable and the correlation (covariance) between them.
+\end{itemize}
+Estimating the uncertainty of complex nonlinear functions can be done using Monte Carlo methods, as recommended in GUM Supplement 1, which will be discussed in detail later.
+
+
+\section{[Step 1] Preliminary Measurements and Sensor Calibration}
+Before analyzing the actual driving data, two key factors that determine the accuracy of the analysis model must be secured. The first is the static physical parameters of the vehicle itself (mass, center of gravity, tire characteristics, etc.), and the second is the error characteristics of the sensor system used to collect the data. This stage is the most fundamental process that guarantees the reliability of the entire pipeline.
+
+\subsection{Vehicle Parameter Identification}
+Parameters such as mass, moment of inertia, and the location of the center of gravity are essential for setting up and analyzing the vehicle's equations of motion. We assume the use of precision measurement equipment like a corner weight gauge.
+
+\textbf{[Required Measurements]:} Total vehicle weight ($W$), front/rear axle loads in a level state ($F_f^{(0)}, F_r^{(0)}$), front axle load when tilted to a specific pitch angle ($\phi$) ($F_f^{(\phi)}$), left/right side loads when tilted to a specific roll angle ($\theta$) ($F_\ell^{(\theta)}, F_r^{(\theta)}$), wheelbase ($L$), and track width ($T$).
+
+\subsubsection{Longitudinal Center of Gravity (CG) Position}
+This is the process of finding where the vehicle's CG is located between the front and rear axles. It utilizes the principle of moment equilibrium from statics.
+\begin{snugshade}
+\noindent \textbf{Understanding the Principle: A Balanced Seesaw} \\
+A level vehicle can be thought of as a seesaw. The front and rear wheels act as fulcrums, and the total weight of the vehicle, $W$, acts at the Center of Gravity (CG). Let's consider the moment equilibrium about the rear axle ($\sum M_r = 0$).
+\begin{itemize}
+    \item Counter-clockwise moment: The force supported by the front wheels ($F_f^{(0)}$) $\times$ the wheelbase ($L$).
+    \item Clockwise moment: The total weight ($W$) $\times$ the distance from the rear axle to the CG ($b$).
+\end{itemize}
+These two moments must be equal, so $F_f^{(0)} \cdot L = W \cdot b$.
+\end{snugshade}
+From this principle, the distance $a$ from the front axle to the CG and the distance $b$ from the rear axle are calculated as follows:
+\begin{equation}
+a = \frac{F_r^{(0)}}{W} L, \quad b = \frac{F_f^{(0)}}{W} L
+\end{equation}
+Here, the total weight $W = F_f^{(0)} + F_r^{(0)}$, and it must naturally hold that $a+b=L$.
+
+\subsubsection{Center of Gravity (CG) Height (Tilting Method)}
+The height of the CG, $h$, is a critical parameter directly related to the vehicle's roll stability. To measure it, the front of the vehicle is lifted to a tilt angle of $\phi$.
+\begin{snugshade}
+\noindent \textbf{Understanding the Principle: A Tilted Seesaw} \\
+When the vehicle is tilted, the gravitational force $W$ acting at the CG can be resolved into a component perpendicular to the tilted vehicle body ($W\cos\phi$) and a component parallel to it ($W\sin\phi$). Again, let's consider the moment equilibrium about the rear axle.
+\begin{itemize}
+    \item Counter-clockwise moment: The force supported by the front wheels ($F_f^{(\phi)}$) $\times$ the wheelbase ($L$).
+    \item Clockwise moment: (Perpendicular component of gravity $W\cos\phi$) $\times$ (horizontal distance $b$) + (Parallel component of gravity $W\sin\phi$) $\times$ (vertical distance $h$).
+\end{itemize}
+These two moments must be equal, so $F_f^{(\phi)} \cdot L = Wb\cos\phi + Wh\sin\phi$.
+\end{snugshade}
+Solving this equation for $h$ gives $h = (F_f^{(\phi)}L - Wb\cos\phi)/(W\sin\phi)$. Since $Wb = F_f^{(0)}L$ in the level state, substituting this in and simplifying yields:
+\begin{equation}
+h = \frac{L (F_f^{(\phi)} - F_f^{(0)}\cos\phi)}{W\sin\phi}
+\end{equation}
+
+\subsubsection{Lateral Center of Gravity (CG) Offset}
+Since no vehicle is perfectly symmetric, we measure how far the CG deviates from the vehicle's centerline. This is done by tilting the vehicle sideways to a roll angle $\theta$, with the principle being similar to the CG height measurement. Ultimately, the lateral offset from the centerline, $y_{\text{cg}}$, is calculated.
+
+\textbf{Note on Uncertainty Propagation}: In all the calculations above, it is necessary to compute how the uncertainty in the input values (measured forces, lengths) affects the uncertainty of the final results (a, b, h). For example, since $h$ is a function of $L, W, F_f^{(0)}, F_f^{(\phi)}, \phi$, the uncertainty of $h$, $u(h)$, is calculated using the uncertainties of each input variable ($u(L), u(W)$, etc.). This is performed using the linear error propagation law based on partial derivatives ($\bm{\Sigma}_{y} = \mat{J} \bm{\Sigma}_{x} \mat{J}^\top$).
+
+\subsection{Tire Characteristics (Static Friction and Rolling Resistance)}
+The envelope of the G-G diagram is ultimately determined by the limits of the force that the tires can transmit to the road surface.
+\subsubsection{Coefficient of Static Friction ($\mu_s$)}
+This represents the magnitude of the maximum friction force a tire can exert without slipping.
+\textbf{[Required Test]:} (1) On a safe, flat surface, perform a rapid acceleration or braking to measure the maximum longitudinal acceleration $a_{x,\max}$ just before the tires slip, or (2) slowly tilt the vehicle to measure the maximum inclination angle $\alpha$ at which the tires begin to slide.
+\begin{equation}
+\mu_s \approx \frac{a_{x,\max}}{g_0} \quad \text{or} \quad \mu_s \approx \tan\alpha
+\end{equation}
+This value serves as an important benchmark for validating the physical plausibility of the G-G diagram.
+
+\subsubsection{Coefficient of Rolling Resistance ($c_{\mathrm{rr}}$)}
+This represents the energy loss that occurs as the tire rolls.
+\textbf{[Required Test]:} Perform a coast-down test by driving the vehicle at a constant speed on a flat surface, then shifting into neutral and allowing it to slow down naturally. Measure the average deceleration $a_x$ in a speed range where air resistance is negligible (e.g., below \SI{10}{\kilo\meter\per\hour}).
+\begin{equation}
+c_{\mathrm{rr}} \approx -\frac{a_x}{g_0}
+\end{equation}
+This value is used to explain the phenomenon where, on the G-G diagram, the longitudinal acceleration is a small negative value when the lateral acceleration is zero.
+
+\subsection{Sensor Calibration}
+\subsubsection{IMU Error Model}
+Low-cost MEMS IMUs contain various error sources. The actual measurements from an accelerometer ($\vect{f}_m$) and a gyroscope ($\vect{\omega}_m$) can be represented by the following linear error model with respect to the true values ($\vect{f}^{b}, \vect{\omega}^{b}$):
+\begin{equation}
+\begin{aligned}
+\vect{f}_m &= \mat{S}_a \vect{f}^{b} + \vect{b}_a + \vect{n}_a \\
+\vect{\omega}_m &= \mat{S}_g \vect{\omega}^{b} + \vect{b}_g + \vect{n}_g
+\end{aligned}
+\end{equation}
+Here, the meaning of each term is as follows:
+\begin{itemize}
+    \item $\mat{S}$: Scale factor and non-orthogonality error matrix. Ideally, this should be an identity matrix ($\mat{I}$).
+    \item $\vect{b}$: Bias. The output when the input is zero, which tends to drift slowly over time.
+    \item $\vect{n}$: White Gaussian Noise. Unpredictable high-frequency noise caused by factors such as thermal noise in the sensor.
+\end{itemize}
+These parameters can be estimated using professional calibration equipment (e.g., a turntable) or through multi-position static tests.
+
+\subsubsection{Allan Variance}
+This is a powerful tool for analyzing the stochastic error characteristics of an IMU.
+\textbf{[Required Data]:} Collect data from a completely stationary IMU for several hours in an environment with minimal external vibrations and temperature changes.
+\begin{snugshade}
+\noindent \textbf{Deep Dive: What is Allan Variance?} \\
+Allan variance is a technique for analyzing sensor noise characteristics in the time domain. In simple terms, it involves averaging data over various time intervals ($\tau$) and then calculating how large the difference is between adjacent average values.
+\begin{itemize}
+    \item \textbf{Short time intervals ($\tau$ is small):} High-frequency noise components in the data are dominant, so the differences between averages are large.
+    \item \textbf{Long time intervals ($\tau$ is large):} High-frequency noise is averaged out, but slowly varying errors like bias drift become prominent.
+\end{itemize}
+When this relationship is plotted on a log-log scale, straight-line regions with specific slopes appear, each corresponding to a particular type of noise.
+\end{snugshade}
+From the Allan variance plot, we primarily obtain two important parameters:
+\begin{itemize}
+    \item \textbf{Angle/Velocity Random Walk (slope -1/2 region):} This indicates the intensity of the white noise. This value ($N$) is used to determine the magnitude of the measurement noise in a state estimation filter (e.g., EKF).
+    \item \textbf{Bias Instability (slope 0 region, bottom of the plot):} This indicates how stable the bias is. This value ($B$) is used in the EKF to model how much the bias can change over time (process noise) when estimating the bias.
+\end{itemize}
+\textbf{[Processing Results]:} Noise densities ($N_a, N_g$) and bias instabilities ($B_a, B_g$). These numbers become key 'tuning parameters' in the subsequent Kalman filter design.
+
+\subsubsection{Camera Intrinsic and Extrinsic Parameters}
+\begin{itemize}
+    \item \textbf{Intrinsic Parameters:} Characteristics unique to the camera's lens and image sensor. This includes focal length, principal point, and lens distortion coefficients. These can be easily calibrated by photographing a well-known checkerboard pattern from various angles.
+    \item \textbf{Extrinsic Parameters:} The relative position and orientation ($\mat{R}_{b}^{c}, \vect{p}_{b}^{c}$) between the body frame $\{b\}$ (usually the IMU's location) and the camera frame $\{c\}$. These have a critical impact on the accuracy of visual-inertial sensor fusion and are estimated using a professional Hand-eye calibration toolbox.
+\end{itemize}
+
+\section{[Step 2] Data Processing and State Estimation}
+In this stage, based on the sensor models calibrated in [Step 1], we process the raw time-series data collected during actual driving to accurately estimate the vehicle's state of motion. The ultimate goal is to calculate the CG acceleration vector in the navigation frame, $\vect{a}_{\text{cg}}^{n}$, for every timestamp, which will form the points of the G-G diagram.
+
+\subsection{Time Synchronization and Data Quality Verification}
+Typically, different sensors like the IMU, camera, and GPS use independent clocks to generate data, so the timestamps of each data stream do not perfectly align. This time discrepancy can cause serious analysis errors in dynamic situations.
+
+\subsubsection{Time Offset Estimation (Cross-Correlation Method)}
+\textbf{[Required Data]:} Signals measured by two different sensors that have a strong physical correlation. For example, (1) the gyroscope's Z-axis value ($\omega_z$) from the IMU and (2) the yaw rate calculated from consecutive camera images measure the same physical phenomenon—the vehicle's rotation—and thus exhibit very similar patterns.
+
+\begin{snugshade}
+\noindent \textbf{Understanding the Principle: Aligning Two Melodies} \\
+Imagine two recorders started recording at slightly different times. If the same song is on both recording files, we can find the point where the two sounds overlap most perfectly by shifting one file back and forth along the time axis. This 'shifted time' is the time offset between the two recorders.
+
+Mathematically, this process is equivalent to calculating the \textbf{cross-correlation} function. It computes how similar the signal $x(t)$ is to a time-shifted signal $y(t+\tau)$ for all possible shifts $\tau$.
+\end{snugshade}
+The time delay $\Delta t^\star$ that maximizes the cross-correlation function $R_{xy}(\tau)$ is the time offset between the two sensors.
+\begin{equation}
+\Delta t^\star = \argmax_{\tau} R_{xy}(\tau), \quad \text{where } R_{xy}(\tau) = \int x(t) y(t+\tau)\,dt
+\end{equation}
+By adding or subtracting this $\Delta t^\star$ to all timestamps of one sensor's data, the two data streams are aligned in time.
+
+\subsubsection{Data Quality Metrics}
+Before using the data for analysis, its basic quality is inspected.
+\textbf{[Decision Variables: Quality Thresholds]:}
+\begin{itemize}
+    \item \textbf{Sampling Jitter:} Check if the data sampling interval is consistent.
+    \item \textbf{Saturation Percentage:} Check how much of the data exceeds the sensor's measurement range. (e.g., If an accelerometer with a $\pm \SI{16}{\gee}$ range consistently measures \SI{16}{\gee}, the actual acceleration might be higher, and that data is unreliable.)
+    \item \textbf{Missing Data Rate:} Check how much data is missing intermittently.
+\end{itemize}
+Data segments that fail to meet these criteria should be excluded from the analysis or handled with interpolation.
+
+\subsection{IMU Data Refinement: Kinematic Principles}
+This section explains the kinematic principles of the step-by-step transformation process to calculate our desired 'CG acceleration in the map frame ($\vect{a}^n_{\text{cg}}$)' from the 'sensor-centric specific force ($\vect{f}_m$)' measured by the IMU. This is an essential foundation for understanding the internal workings of sensor fusion algorithms like VIO. The acceleration data used for the final G-G diagram generation will be the high-quality, drift-corrected results estimated by the VIO-EKF, as described in the VIO-EKF section below.
+
+\subsubsection{Step 1: Attitude Estimation (AHRS)}
+The very first thing needed is the vehicle's Attitude, i.e., the rotation matrix $\mat{R}_{b}^{n}$ at every time step. This is necessary to move between the body and navigation frames.
+Attitude is estimated using an \textbf{AHRS (Attitude and Heading Reference System)} algorithm.
+\begin{snugshade}
+\noindent \textbf{Deep Dive: How Does an AHRS Work?} \\
+An AHRS is a filter that fuses gyroscope and accelerometer data in a complementary manner.
+\begin{itemize}
+    \item \textbf{Gyroscope ($\vect{\omega}_m$):} Provides very precise angle changes over short periods, but its bias error accumulates over time, causing drift (because angle is obtained by integrating angular velocity).
+    \item \textbf{Accelerometer ($\vect{f}_m$):} When the vehicle is nearly stationary or moving at a constant velocity, the specific force measured by the accelerometer is mostly due to gravity. This means the measured specific force vector points in the opposite direction of gravity, i.e., 'Up.' This 'absolute vertical direction' information can be used to correct the gyroscope's accumulated error.
+\end{itemize}
+AHRS algorithms, such as the Madgwick or Mahony filters, or those based on an EKF (Extended Kalman Filter), repeatedly perform a process of quickly predicting the attitude using gyroscope measurements and correcting this prediction using accelerometer measurements.
+\textbf{However, correction using the accelerometer is only valid in quasi-steady-state conditions where the vehicle's specific force has a magnitude similar to gravity, i.e., $\norm*{\vect{f}_m - \hat{\vect{b}}_a} \approx g_0$.} During strong acceleration or cornering, this assumption is violated, so a strategy of temporarily gating the accelerometer-based correction is needed. Mathematically, this gating condition can be expressed as $\bigl|\,\norm*{\vect{f}_m-\hat{\vect{b}}_a}-g_0\bigr|<\epsilon_g$ (where $\epsilon_g$ is a small threshold, e.g., \SI{0.1}{\meter\per\second\squared}). Furthermore, with only a gyroscope and accelerometer, the absolute yaw angle with respect to the Earth cannot be determined, leading to inevitable drift. The VIO approach, which we ultimately use in this paper, is a robust solution that overcomes this limitation.
+Despite these limitations, AHRS is useful for VIO initialization or short-term attitude estimation, outputting the attitude quaternion $\hat{\vect{q}}_k$ (and the derived $\hat{\mat{R}}_{b,k}^{n}$) at each time step $k$.
+\end{snugshade}
+
+\subsubsection{Step 2: Gravity Compensation}
+Now that we know the attitude, we can remove the effect of gravity from the accelerometer measurements. Since specific force ($\vect{f}$) is kinematic acceleration ($\vect{a}$) minus gravitational acceleration ($\vect{g}$), it follows that $\vect{a} = \vect{f} + \vect{g}$.
+This calculation \textbf{must be performed in the same coordinate frame}. It is generally more convenient to do this in the navigation frame.
+\begin{enumerate}
+    \item Subtract the estimated bias $\hat{\vect{b}}_a$ from the IMU measurement $\vect{f}_m$. This gives the specific force in the body frame, $\vect{f}^b = \vect{f}_m - \hat{\vect{b}}_a$.
+    \item Transform this specific force to the navigation frame using the estimated attitude $\hat{\mat{R}}_{b}^{n}$: $\hat{\mat{R}}_{b}^{n} \vect{f}^b$.
+    \item Add the gravity vector in the navigation frame, $\vect{g}^n$, to the result.
+\end{enumerate}
+The result is the kinematic acceleration at the IMU sensor's location, expressed in the navigation frame.
+\begin{equation}
+\vect{a}^{n}_{\text{imu}} = \hat{\mat{R}}_{b}^{n}(\vect{f}_m - \hat{\vect{b}}_a) + \vect{g}^{n} \label{eq:imu_nav_accel}
+\end{equation}
+
+\subsubsection{Step 3: Lever Arm Compensation}
+Finally, we need to convert the acceleration at the IMU's location ($\vect{a}_{\text{imu}}$) to the acceleration at the CG ($\vect{a}_{\text{cg}}$), which is what we ultimately want. The relationship between the accelerations of two points on a rigid body (CG and IMU) is given by the following equation from dynamics:
+\begin{equation}
+\vect{a}_{\text{imu}} = \vect{a}_{\text{cg}} + \vect{\alpha} \times \vect{r} + \vect{\omega} \times (\vect{\omega} \times \vect{r})
+\end{equation}
+Here, $\vect{r} = \vect{r}_{\text{cg}\to\text{imu}}$ is the lever arm vector, $\vect{\omega}$ is the angular velocity, and $\vect{\alpha}$ is the angular acceleration. This relationship holds not only for kinematic acceleration but also for specific force. Therefore, we can calculate the specific force at the CG from the specific force measured at the IMU. This calculation is more convenient to perform in the body frame.
+\begin{enumerate}
+    \item Use the bias-corrected gyroscope measurement $\hat{\vect{\omega}}^b = \vect{\omega}^b_m - \hat{\vect{b}}_g$.
+    \item Differentiate $\hat{\vect{\omega}}^b$ with respect to time to calculate the angular acceleration $\hat{\vect{\alpha}}^b$. (Note: Differentiating a noisy signal amplifies noise, so a differentiation technique with a low-pass filter is required.)
+    \item Calculate the rotational compensation terms using the lever arm vector $\vect{r}_{\text{cg}\to\text{imu}}^{b}$.
+\end{enumerate}
+Ultimately, the \textbf{specific force at the CG}, $\vect{f}^{b}_{\text{cg}}$, obtained by compensating for the lever arm effect from the specific force at the IMU, is:
+\begin{equation}
+\vect{f}^{b}_{\text{cg}} = (\vect{f}_m - \hat{\vect{b}}_a) - (\hat{\vect{\alpha}}^b \times \vect{r}^b) - (\hat{\vect{\omega}}^b \times (\hat{\vect{\omega}}^b \times \vect{r}^b)) \label{eq:fcg_body}
+\end{equation}
+It is common practice to first calculate the specific force at the CG in the body frame like this, and then transform it to the navigation frame and add gravity. The key to this entire calculation is that \textbf{all vector terms must be expressed in the same coordinate frame}. Alternatively, one could first find the kinematic acceleration at the IMU location and then compensate for the lever arm effect directly in the navigation frame, as shown in the equation below. It can be verified that combining \eqref{eq:cg_from_fcg} and \eqref{eq:fcg_body} yields the same result as \eqref{eq:cg_from_imu_nav}.
+\begin{equation}
+\vect{a}^{n}_{\text{cg}} = \vect{a}^{n}_{\text{imu}} - \hat{\mat{R}}_{b}^{n}\!\left(\hat{\vect{\alpha}}^{b} \times \vect{r}^{b} + \hat{\vect{\omega}}^{b} \times (\hat{\vect{\omega}}^{b} \times \vect{r}^{b})\right) \label{eq:cg_from_imu_nav}
+\end{equation}
+\subsubsection{Final Result: CG Acceleration}
+Now all the pieces are in place. By transforming the specific force at the CG in the body frame, $\vect{f}^{b}_{\text{cg}}$, calculated in Step 3, to the navigation frame and adding gravity, we obtain our final desired result: the kinematic acceleration of the CG.
+
+\textbf{IMU-only based CG acceleration in the navigation frame}:
+\begin{equation}
+\vect{a}^{n}_{\text{cg}} = \hat{\mat{R}}_{b}^{n} \vect{f}^{b}_{\text{cg}} + \vect{g}^{n} \label{eq:cg_from_fcg}
+\end{equation}
+
+
+\subsection{Vision: Feature Extraction and Scale-Ambiguous Motion Estimation}
+If the IMU is a sensor that feels its own motion with its 'eyes closed,' the camera is a sensor that understands its relative motion with the surrounding environment with its 'eyes open.'
+
+\begin{snugshade}
+\noindent \textbf{Core Concept: Principle of Visual Odometry (VO)} \\
+When we look out the window of a moving car, nearby objects pass by quickly, while distant mountains seem almost stationary. Our brain subconsciously calculates how fast and in which direction the car is moving from this optical flow. VO is the computer implementation of this principle.
+\begin{enumerate}
+    \item \textbf{Feature Extraction:} In two consecutive camera images ($I_k, I_{k+1}$), find hundreds of conspicuous 'feature points,' like edges or corners. (e.g., SIFT, SURF, ORB algorithms)
+    \item \textbf{Feature Matching:} Find the corresponding pair for each feature point from $I_k$ in the image $I_{k+1}$.
+    \item \textbf{Relative Motion Estimation:} By geometrically analyzing the 2D displacement vectors of these numerous feature points, reverse-calculate how the camera \textbf{Rotated} and \textbf{Translated} in 3D space between the two shots.
+\end{enumerate}
+\end{snugshade}
+A crucial constraint used in this process is \textbf{Epipolar Geometry}. As a result, we can obtain the relative rotation matrix $\mat{R}$ and a unit vector $\hat{\vect{t}}$ representing the direction of relative translation between the two frames.
+
+\textbf{The Fatal Limitation of VO: Scale Ambiguity}
+With a camera alone, the actual distance of travel cannot be determined. For example, a video of a small toy car moving 10 cm shot up close can look identical to a video of a real car moving 10 m shot from far away. Thus, VO can tell us the 'shape' of the motion but not its actual 'scale.' What we get is not the true displacement $\vect{t}$, but the product of a unit vector $\hat{\vect{t}}$ with the same direction and an unknown scale factor $s$, i.e., $\vect{t} = s \cdot \hat{\vect{t}}$. Determining this unknown scale factor $s$ is one of the core challenges of VIO.
+
+\subsection{Tightly-Coupled Visual-Inertial Odometry (VIO)}
+VIO is a technique that creates synergy by having the IMU's weaknesses and VO's weaknesses complement each other.
+\begin{itemize}
+    \item The IMU is very precise over short durations and contains real \textbf{scale} information (distance can be obtained by double-integrating acceleration).
+    \item VO has low drift and is stable over the long term, but it does not know the scale and is vulnerable to fast movements or blurry images.
+\end{itemize}
+The \textbf{Tightly-coupled} approach is the most sophisticated method, processing the raw measurements from both sensors within a single optimization problem to \textbf{simultaneously estimate} the vehicle's state (position, velocity, attitude) and the sensor errors (biases). In this paper, we use the \textbf{Extended Kalman Filter (EKF)} as a representative method for implementing this.
+
+\subsubsection{State Vector Definition}
+The EKF manages all the variables we want to estimate in a single long vector, the state vector $\vect{x}$. The state vector for VIO can be structured as follows:
+\begin{equation}
+\vect{x} = [\, \underbrace{\vect{p}^{n}_{\text{cg}}}_{\text{Position}}, \, \underbrace{\vect{v}^{n}_{\text{cg}}}_{\text{Velocity}}, \, \underbrace{\vect{q}_{b}^{n}}_{\text{Attitude}}, \, \underbrace{\vect{b}_g}_{\text{Gyro Bias}}, \, \underbrace{\vect{b}_a}_{\text{Accel Bias}} \, ]^\top
+\end{equation}
+This involves simultaneously estimating a total of 3(position)+3(velocity)+4(quaternion attitude)+3(gyro bias)+3(accel bias) = 16 variables. (In practice, it is common to use an error-state formulation, resulting in a 15-dimensional state.)
+
+\subsubsection{EKF Operation: The Cycle of Prediction and Update}
+The Kalman filter operates in a two-step cycle.
+\begin{enumerate}
+    \item \textbf{Prediction Step:}
+    Until a new camera image arrives, use the high-frequency (e.g., \SI{200}{\hertz}) IMU data to predict how the state vector will change. The IMU's angular velocity measurement predicts the change in attitude, and its acceleration measurement predicts the change in velocity and position. This process directly uses the IMU kinematic model.
+    \begin{equation}
+    \begin{aligned}
+    \dot{\vect{p}}^{n} &= \vect{v}^{n} \\
+    \dot{\vect{v}}^{n} &= \mat{R}_{b}^{n}(\vect{q})\left(\vect{f}_m - \vect{b}_a\right) + \vect{g}^{n} \\
+    \dot{\vect{q}} &= \tfrac{1}{2}\,\vect{q}\otimes
+        \begin{bmatrix}
+        0\\ \vect{\omega}_m - \vect{b}_g
+        \end{bmatrix}
+    \end{aligned}
+    \end{equation}
+    Since the IMU measurements contain noise, the uncertainty of the predicted state (the covariance matrix $\bm{\Sigma}_x$) also grows.
+    
+    \item \textbf{Update Step:}
+    When a new camera image ($I_{k+1}$) arrives (e.g., at \SI{30}{\hertz}), use this image to correct the prediction.
+    \begin{snugshade}
+    \noindent \textbf{Deep Dive: How Does the Update Work?} \\
+    \begin{itemize}
+        \item \textbf{Calculate Measurement Residual:}
+        In tightly-coupled VIO, instead of directly using the relative transform result from VO, the measurement residual is calculated using the \textbf{reprojection error}. This is the difference between the location where a 3D feature point observed in the previous frame is projected onto the current image plane using the current state estimate, and the actual observed location of that feature point in the current image. In the process of minimizing this error, the true scale is naturally determined by the IMU measurements.
+        \item \textbf{Calculate Kalman Gain:}
+        The Kalman Gain is a weight that balances the 'uncertainty of the prediction' against the 'uncertainty of the measurement.' If the IMU-based prediction is very uncertain (e.g., after a long period of using only the IMU) and the camera measurement is very certain (e.g., a sharp image with many feature points), the Kalman Gain will be large. This means, "The prediction is not very reliable, so use more of this new measurement to correct the state."
+        \item \textbf{Update State and Covariance:}
+        Using the calculated Kalman Gain and the measurement residual, the predicted state vector $\vect{x}$ and covariance matrix $\bm{\Sigma}_x$ are finally corrected (updated).
+    \end{itemize}
+    \end{snugshade}
+\end{enumerate}
+By repeating this prediction-update cycle, the VIO system allows the camera to periodically correct the IMU's accumulated error, while the IMU enables the camera to find the scale and become robust to fast motion.
+
+\textbf{[Output 2] VIO-based Estimated Vehicle Velocity and Acceleration}:
+Through the VIO-EKF, we obtain a corrected state vector $\hat{\vect{x}}_k$ at every time step.
+\begin{itemize}
+    \item The velocity component $\hat{\vect{v}}^{n}_{\text{cg},k}$ within this vector is a much more accurate and drift-free velocity estimate than simple IMU integration.
+    \item By differentiating this velocity time-series with a stable differentiation filter, we can obtain a very clean and accurate acceleration $\hat{\vect{a}}^{n}_{\text{cg},k}$. This generally has higher quality than the result calculated from the IMU alone.
+\end{itemize}
+In conclusion, by using VIO, we can obtain the key data required to draw the G-G diagram—the acceleration of the center of gravity—with much higher reliability.
+
+\section{[Step 3] G-G Diagram Generation and Validation}
+Using the high-quality, drift-corrected time-series data of the Center of Gravity acceleration, $\hat{\vect{a}}^{n}_{\text{cg}}(t)$ ([Output 2]), which was finally estimated through the tightly-coupled VIO-EKF in [Step 2], we generate the final G-G diagram and comprehensively evaluate the validity and reliability of the result.
+
+\subsection{Quasi-Steady-State Filter}
+A G-G diagram should represent the 'sustainable' maximum acceleration limits a vehicle can achieve. However, actual driving data contains many short, explosive 'transient state' acceleration values that occur during sudden steering inputs or when driving over bumps. These values are not considered representative of the tire's normal friction limits. Therefore, a process to filter out these outliers is necessary.
+
+\begin{snugshade}
+\noindent \textbf{Core Concept: Why is 'Quasi-Steady-State' Important?} \\
+For a tire to exert its maximum friction force, a load must be applied steadily for a certain period. For example, a high acceleration value that appears for a very brief moment, say 0.01 seconds, is more likely to be an external shock or measurement noise than the vehicle's true cornering limit. A 'quasi-steady-state' refers to a condition of 'stable' turning or acceleration/deceleration, where the rate of change of acceleration and angular velocity (jerk, angular acceleration) is nearly zero. Only data from these states can be said to truly represent the vehicle's performance.
+\end{snugshade}
+
+\textbf{[Decision Variables: Quasi-Steady-State Thresholds]:} Select only data points that satisfy the following conditions within a specific time window ($\tau_w$, e.g., \SI{0.2}{\second}):
+\begin{itemize}
+    \item Jerk Threshold: $\norm*{\frac{d\vect{a}^{n}_{\text{cg}}}{dt}}_\infty < \epsilon_a$
+    \item Angular Acceleration Threshold: $\norm*{\frac{d\vect{\omega}^{b}}{dt}}_\infty < \epsilon_\alpha$
+\end{itemize}
+Here, $\epsilon_a, \epsilon_\alpha$ are user-defined thresholds (e.g., $\epsilon_a = \SI{0.5}{\gee\per\second}$, $\epsilon_\alpha = \SI{10}{\radian\per\second\squared}$). After this filtering, the number of data points is significantly reduced, but the remaining points are the 'prime' data that clearly show the shape of the G-G diagram.
+
+\subsection{G-G Envelope Extraction (Alpha Shape)}
+The navigation-frame acceleration data $\hat{\vect{a}}^{n}_{\text{cg}}(t)$ that has passed through the quasi-steady-state filter must first be transformed to the body frame to generate the G-G diagram. Using the attitude estimate $\hat{\mat{R}}_{n}^{b} = (\hat{\mat{R}}_{b}^{n})^\top$ at each timestamp, we calculate:
+\begin{equation}
+    \vect{a}^{b}_{\text{cg}} = \hat{\mat{R}}_{n}^{b} \hat{\vect{a}}^{n}_{\text{cg}}
+\end{equation}
+The components of this transformed body-frame acceleration are normalized by standard gravity to form the set of G-G data points $\mathcal{S} = \{(G_x, G_y)\}$.
+\begin{equation}
+    G_x = \frac{(\vect{a}^{b}_{\text{cg}})_x}{g_0}, \quad G_y = \frac{(\vect{a}^{b}_{\text{cg}})_y}{g_0}
+\end{equation}
+\textbf{According to the body frame adopted in this paper (Y-axis: Right), the lateral acceleration $G_y$ is positive (+) for a right turn and negative (-) for a left turn.}
+We need to find the boundary line that encloses this 2D point cloud from the outside.
+
+\begin{snugshade}
+\noindent \textbf{Deep Dive: Why Not Just Use a Convex Hull?} \\
+The simplest method is to find the convex polygon of minimum area that contains all points, i.e., the Convex Hull. However, a real vehicle's G-G diagram can exhibit concave regions due to the influence of the friction ellipse when acceleration/braking is combined with cornering. A convex hull cannot represent these concave details.
+
+The \textbf{Alpha-Shape} is a generalized technique that solves this problem. It can be thought of as rolling a virtual circle (disk) of radius $1/\alpha$ to find the boundary of the point cloud.
+\begin{itemize}
+    \item $\alpha \to 0$ (The circle becomes very large): The result is the same as the convex hull.
+    \item $\alpha \to \infty$ (The circle becomes very small): Every point becomes part of the boundary, and the result is the original point set.
+\end{itemize}
+By selecting an appropriate \textbf{alpha value ($\alpha$)}, we can extract a tight boundary that well represents even the concave parts of the data. In practice, the optimal $\alpha$ value can be determined empirically through cross-validation that minimizes the Hausdorff distance between data from repeated runs.
+\end{snugshade}
+\textbf{[Final Result 1] G-G Envelope}: The boundary $\mathcal{E} = \partial \mathcal{S}_\alpha$ extracted by the alpha-shape algorithm is the desired performance envelope of the G-G diagram.
+
+\subsection{System-Wide Validation}
+This is the process of proving with objective metrics how reliable our generated G-G diagram is.
+\subsubsection{Kinematic Consistency Check}
+\textbf{Under quasi-steady-state conditions on a flat road with small slip, roll, and pitch angles,} certain relationships between the vehicle's kinematic variables must hold. We can compare the consistency between the lateral acceleration in the body frame estimated by the VIO system ($(\hat{\mat{R}}_n^b \hat{\vect{a}}_{\text{cg}}^n)_y$) and the centripetal acceleration component calculated from the product of independently estimated forward velocity and yaw rate ($\hat{v}_x^b \cdot \hat{\omega}_z^b$). This is because the Y-axis acceleration component in the body frame is expressed kinematically as $a_y = \dot{v}_y - v_z \omega_x + v_x \omega_z$, which simplifies to $a_y \approx v_x \omega_z$ in quasi-steady-state planar motion where the rate of change of lateral velocity ($\dot{v}_y$) and the roll/pitch components ($v_z, \omega_x$) are small. A \textbf{coefficient of determination ($R^2$)} close to 1 between these two time-series data indicates that the entire proposed state estimation system is operating with very high kinematic consistency.
+
+\subsubsection{Repeatability (Hausdorff Distance)}
+When the same vehicle is driven on the same test course multiple times, a similar G-G diagram should be generated each time. To quantitatively evaluate this 'similarity,' we use the \textbf{Hausdorff distance} $d_H$. This is a method for measuring the distance between two sets of points (boundary lines A and B), defined as the greater of "the largest of all the shortest distances from a point in A to any point in B" and "the largest of all the shortest distances from a point in B to any point in A." A smaller value indicates that the two G-G diagrams are more similar, which shows that our pipeline produces repeatable results.
+
+\subsubsection{Physical Plausibility Check}
+The boundary of the G-G diagram cannot exceed the friction circle defined by the \textbf{coefficient of static friction $\mu_s$} measured in [Step 1]. We check the physical plausibility of the results by verifying that the following relationship generally holds:
+\begin{equation}
+    G_x^2 + G_y^2 \le \mu_s^2
+\end{equation}
+
+\subsection{Final Uncertainty Analysis (ISO GUM \& Monte Carlo)}
+Finally, instead of simply stating, "The maximum lateral acceleration is \SI{1.2}{\gee}," we must be able to say, "The maximum lateral acceleration is \SI{1.20 \pm 0.05}{\gee} at a 95\% confidence level."
+
+\begin{snugshade}
+\noindent \textbf{Deep Dive: Monte Carlo Uncertainty Analysis} \\
+A value like the maximum lateral acceleration $G_{y,\max}$ is the final output of numerous measurements and complex nonlinear algorithms (VIO, alpha-shape, etc.). Analytically calculating the output uncertainty of such a complex system is nearly impossible.
+
+\textbf{Monte Carlo simulation} provides a powerful numerical solution to this problem.
+\begin{enumerate}
+    \item \textbf{Introduce Randomness to Inputs:} We know the mean and uncertainty (standard deviation) of all input parameters measured in [Step 1] (mass, lengths, sensor biases, noise, etc.). Based on this information, we define a probability distribution (usually a normal distribution) for each parameter.
+    \item \textbf{Tens of Thousands of Simulations:} Randomly sample a set of input parameters from these probability distributions N times (e.g., 10,000 times).
+    \item \textbf{Generate Output Distribution:} For each of the N different sets of input parameters, run the entire pipeline from start to finish to obtain N values of $G_{y,\max}$.
+    \item \textbf{Statistical Analysis:} Analyze the distribution of the N resulting $G_{y,\max}$ values. The mean of this distribution becomes our final estimate, and its standard deviation becomes the standard uncertainty. The 2.5th and 97.5th percentiles of the distribution provide the 95\% confidence interval.
+\end{enumerate}
+\end{snugshade}
+
+\subsubsection{Example Reporting Format}
+The final results, obtained through this rigorous process, can be reported as follows:
+\textbf{[Final Result 2] Quantified Performance Metrics}:
+\begin{itemize}
+    \item Max Lateral Acceleration: $G_{y,\max} = \SI{1.20 \pm 0.05}{\gee}$ (95\% confidence interval)
+    \item Max Longitudinal Acceleration (accel): $G_{x,\max}^{\mathrm{accel}} = \SI{0.55 \pm 0.03}{\gee}$ (95\% confidence interval)
+    \item Max Longitudinal Acceleration (brake): $G_{x,\max}^{\mathrm{brake}} = -\SI{1.10 \pm 0.06}{\gee}$ (95\% confidence interval)
+   \item Repeatability (based on 5 runs): $d_H = 0.04 \pm 0.01$ (dimensionless)
+\end{itemize}
+
+\section{Conclusion}
+This paper has presented a detailed and systematic pipeline for generating and validating a G-G diagram from vehicle sensor data. We have described the entire process in detail, starting from a rigorous definition of coordinate frames, through vehicle parameter identification, sensor calibration, robust state estimation via tightly-coupled VIO, and finally to envelope extraction and uncertainty analysis. The proposed methodology goes beyond simply visualizing the G-G diagram; by quantitatively guaranteeing the reliability and reproducibility of the results, it provides a solid foundation for conducting scientifically rigorous research in the field of vehicle dynamics analysis.
+
+
+\end{document}

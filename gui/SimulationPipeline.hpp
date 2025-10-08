@@ -91,6 +91,9 @@ public:
     QuasiSteadyStateFilter::Thresholds thresholds() const { return thresholds_; }
     void setThresholds(const QuasiSteadyStateFilter::Thresholds& thresholds);
 
+    double envelopeAlpha() const { return envelopeAlpha_; }
+    void setEnvelopeAlpha(double alpha);
+
 private:
     struct Segment {
         double duration;
@@ -125,6 +128,7 @@ private:
 
     QuasiSteadyStateFilter::Thresholds thresholds_;
     QuasiSteadyStateFilter filter_;
+    double envelopeAlpha_{1.5};
     GgEnvelope envelope_;
 
     double time_{0.0};

@@ -259,6 +259,15 @@ void GuiApplication::drawControls() {
         pipeline_.setThresholds(thresholds);
     }
 
+    float alphaDetail = static_cast<float>(pipeline_.envelopeAlpha());
+    if (ImGui::SliderFloat("Alpha Detail (1/g)", &alphaDetail, 0.0f, 5.0f, "%.3f")) {
+        pipeline_.setEnvelopeAlpha(static_cast<double>(alphaDetail));
+        monteCarloStatus_.clear();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("0 = convex hull; larger values keep more concave structure.");
+    }
+
     ImGui::End();
 }
 

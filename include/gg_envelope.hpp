@@ -8,9 +8,14 @@ namespace gg {
 
 class GgEnvelope {
 public:
+    explicit GgEnvelope(double alpha = 0.0);
+
     void addPoint(const Point2D& point);
     void addPoint(double gx, double gy);
     void clear();
+
+    void setAlpha(double alpha);
+    double alpha() const { return alpha_; }
 
     std::vector<Point2D> calculateEnvelope() const;
 
@@ -18,7 +23,7 @@ public:
 
 private:
     std::vector<Point2D> points_;
+    double alpha_{0.0};
 };
 
 }  // namespace gg
-

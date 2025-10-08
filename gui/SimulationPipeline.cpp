@@ -27,6 +27,7 @@ SimulationPipeline::SimulationPipeline()
       processor_(makeAttitudeEstimator(processorParams_), processorConfig_),
       thresholds_{0.35, 5.0 * kDegToRad, 0.45, 1.6 * kDegToRad, 0.25},
       filter_(thresholds_) {
+    envelope_.setAlpha(envelopeAlpha_);
     rebuildProcessor();
 }
 
@@ -79,6 +80,7 @@ void SimulationPipeline::reset() {
     rebuildProcessor();
     filter_ = QuasiSteadyStateFilter(thresholds_);
     envelope_.clear();
+    envelope_.setAlpha(envelopeAlpha_);
     datasetAccumulator_ = 0.0;
     datasetIndex_ = 0;
     datasetFinished_ = false;
@@ -261,6 +263,7 @@ void SimulationPipeline::setThresholds(const QuasiSteadyStateFilter::Thresholds&
 
 void SimulationPipeline::rebuildFilter() {
     filter_ = QuasiSteadyStateFilter(thresholds_);
+    envelope_.setAlpha(envelopeAlpha_);
     envelope_.clear();
     steadyStatePoints_.clear();
     envelopeHull_.clear();
@@ -358,6 +361,25 @@ void SimulationPipeline::clearProcessedData() {
     monteCarloEnvelope_.clear();
 }
 
+void SimulationPipeline::setEnvelopeAlpha(double alpha) {
+    double sanitized = (std::isfinite(alpha) && alpha >= 0.0) ? alpha : 0.0;
+    if (std::abs(sanitized - envelopeAlpha_) <= 1e-9) {
+        return;
+    }
+
+    envelopeAlpha_ = sanitized;
+    envelope_.setAlpha(envelopeAlpha_);
+    envelopeHull_ = envelope_.calculateEnvelope();
+
+    if (!monteCarloSamples_.empty()) {
+        GgEnvelope aggregate(envelopeAlpha_);
+        for (const auto& sample : monteCarloSamples_) {
+            aggregate.addPoint(sample);
+        }
+        monteCarloEnvelope_ = aggregate.calculateEnvelope();
+    }
+}
+
 void SimulationPipeline::rebuildProcessor() {
     processorConfig_ = buildProcessorConfig(processorParams_);
     processor_ = GgProcessor(makeAttitudeEstimator(), processorConfig_);
@@ -369,6 +391,7 @@ void SimulationPipeline::replayHistory() {
         processedPoints_.clear();
         steadyStatePoints_.clear();
         envelope_.clear();
+        envelope_.setAlpha(envelopeAlpha_);
         envelopeHull_.clear();
         lastProcessed_.reset();
         filter_ = QuasiSteadyStateFilter(thresholds_);
@@ -384,6 +407,7 @@ void SimulationPipeline::replayHistory() {
     processedPoints_.clear();
     steadyStatePoints_.clear();
     envelope_.clear();
+    envelope_.setAlpha(envelopeAlpha_);
     envelopeHull_.clear();
     lastProcessed_.reset();
     monteCarloSamples_.clear();
@@ -434,7 +458,7 @@ bool SimulationPipeline::runMonteCarlo() {
     std::normal_distribution<double> gyroBiasNoise(0.0, monteCarloParams_.gyroBiasSigma);
     std::normal_distribution<double> leverNoise(0.0, monteCarloParams_.leverArmSigma);
 
-    GgEnvelope aggregateEnvelope;
+    GgEnvelope aggregateEnvelope(envelopeAlpha_);
 
     for (std::size_t i = 0; i < monteCarloParams_.samples; ++i) {
         ProcessorParams perturbed = processorParams_;
